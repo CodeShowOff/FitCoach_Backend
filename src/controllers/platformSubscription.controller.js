@@ -5,7 +5,7 @@ import User from "../models/User.js";
 import cloudinary from "../config/cloudinary.js";
 import streamifier from "streamifier";
 
-const PLATFORM_FEE = 199; // ₹199 per month
+const PLATFORM_FEE = 99; // ₹99 per month
 const SUBSCRIPTION_DURATION_DAYS = 30; // 30 days per payment
 
 // ------------------------------
