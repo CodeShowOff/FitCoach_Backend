@@ -1,0 +1,7 @@
+desktop.ini
+node_modules/
+.env
+.env.production
+hidden-datas/
+.next/
+package-lock.json
