@@ -235,7 +235,7 @@ export const getCoachOrders = asyncHandler(async (req, res) => {
 
   const [orders, total] = await Promise.all([
     Order.find(filter)
-      .populate("clientId", "fullName email")
+      .populate("clientId", "fullName email phone whatsappNumber address")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)

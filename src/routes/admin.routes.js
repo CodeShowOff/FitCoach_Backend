@@ -5,8 +5,10 @@ import {
   getAllUsers,
   getUserById,
   getAllProducts,
+  deleteProductByAdmin,
   getAllOrders,
   getAllPlans,
+  deletePlanByAdmin,
   getAllSubscriptions,
   updateSubscriptionStatusByAdmin,
   toggleUserStatus,
@@ -58,6 +60,11 @@ router.patch(
 // @access  Private (Admin only)
 router.get("/products", protect, authorizeRoles("admin"), getAllProducts);
 
+// @route   DELETE /api/v1/admin/products/:id
+// @desc    Delete a product by ID
+// @access  Private (Admin only)
+router.delete("/products/:id", protect, authorizeRoles("admin"), deleteProductByAdmin);
+
 // @route   GET /api/v1/admin/orders
 // @desc    Get all orders (paginated)
 // @access  Private (Admin only)
@@ -67,6 +74,11 @@ router.get("/orders", protect, authorizeRoles("admin"), getAllOrders);
 // @desc    Get all plans (paginated)
 // @access  Private (Admin only)
 router.get("/plans", protect, authorizeRoles("admin"), getAllPlans);
+
+// @route   DELETE /api/v1/admin/plans/:id
+// @desc    Delete a plan by ID
+// @access  Private (Admin only)
+router.delete("/plans/:id", protect, authorizeRoles("admin"), deletePlanByAdmin);
 
 // @route   GET /api/v1/admin/subscriptions
 // @desc    Get all subscriptions (filter by status, paginated)

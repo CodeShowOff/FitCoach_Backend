@@ -239,6 +239,34 @@ export const getAllProducts = asyncHandler(async (req, res) => {
 });
 
 // ------------------------------
+// 🗑️ @desc Delete a product (Admin only)
+// @route DELETE /api/v1/admin/products/:id
+// @access Private (Admin only)
+// ------------------------------
+export const deleteProductByAdmin = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400);
+    throw new Error("Invalid product ID format");
+  }
+
+  const product = await Product.findById(id);
+  if (!product) {
+    res.status(404);
+    throw new Error("Product not found");
+  }
+
+  await product.deleteOne();
+
+  res.json({
+    success: true,
+    message: "Product deleted successfully",
+  });
+});
+
+// ------------------------------
 // 📦 @desc Get all orders
 // @route GET /api/v1/admin/orders
 // @access Private (Admin)
@@ -384,6 +412,34 @@ export const getAllPlans = asyncHandler(async (req, res) => {
       page,
       totalPages: Math.ceil(total / limit),
     },
+  });
+});
+
+// ------------------------------
+// 🗑️ @desc Delete a plan (Admin only)
+// @route DELETE /api/v1/admin/plans/:id
+// @access Private (Admin only)
+// ------------------------------
+export const deletePlanByAdmin = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400);
+    throw new Error("Invalid plan ID format");
+  }
+
+  const plan = await Plan.findById(id);
+  if (!plan) {
+    res.status(404);
+    throw new Error("Plan not found");
+  }
+
+  await plan.deleteOne();
+
+  res.json({
+    success: true,
+    message: "Plan deleted successfully",
   });
 });
 

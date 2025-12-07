@@ -654,7 +654,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
 
   if (!refreshToken) {
     res.status(401);
-    throw new Error("No refresh token provided");
+    throw new Error("Not authenticated. Please log in to continue.");
   }
 
   // Check token existence in DB

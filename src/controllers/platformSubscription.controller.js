@@ -293,21 +293,12 @@ export const approveOrRejectPayment = asyncHandler(async (req, res) => {
     payment.approvedBy = req.user._id;
     payment.approvedAt = new Date();
 
-    // Calculate validity period
+    // Calculate validity period - ALWAYS start from NOW (approval date)
+    // The user pays for 30 days from the day their payment is approved,
+    // not from any previous expiry date
     const now = new Date();
-    let validFrom;
-
-    // If currently in trial or expired, start from now
-    if (subscription.status === "trial" || subscription.status === "expired") {
-      validFrom = now;
-    } else if (subscription.status === "active" && subscription.subscriptionExpiresAt) {
-      // If active, extend from current expiry date
-      validFrom = subscription.subscriptionExpiresAt > now ? subscription.subscriptionExpiresAt : now;
-    } else {
-      validFrom = now;
-    }
-
-    const validUntil = new Date(validFrom.getTime() + SUBSCRIPTION_DURATION_DAYS * 24 * 60 * 60 * 1000);
+    const validFrom = now;
+    const validUntil = new Date(now.getTime() + SUBSCRIPTION_DURATION_DAYS * 24 * 60 * 60 * 1000);
 
     payment.validFrom = validFrom;
     payment.validUntil = validUntil;
