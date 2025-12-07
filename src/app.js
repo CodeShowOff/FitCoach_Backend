@@ -78,6 +78,16 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 // ------------------------------
+// 🩹 Health Check Route (before rate limiter for uptime monitoring)
+// ------------------------------
+app.get("/api/v1/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Backend API is up and running!",
+  });
+});
+
+// ------------------------------
 // ⚙️ Rate Limiter
 // ------------------------------
 app.use("/api", generalLimiter);
@@ -128,25 +138,6 @@ app.use("/api/v1/contact-requests", contactRequestRoutes);
 app.use("/api/v1/contact-us", contactUsRoutes);
 app.use("/api/v1/bug-reports", bugReportRoutes);
 app.use("/api/v1/feedback", feedbackRoutes);
-
-
-// ------------------------------
-// 🩹 Health Check Route
-// ------------------------------
-app.get("/api/v1/health", (req, res) => {
-  try {
-    res.status(200).json({
-      success: true,
-      message: "Backend API is up and running!",
-    });
-  } catch (error) {
-    console.error("Error in health check:", error);
-    res.status(500).json({
-      success: false,
-      message: "Health check failed",
-    });
-  }
-});
 
 // ------------------------------
 // ❌ 404 Handler (Express 5)
