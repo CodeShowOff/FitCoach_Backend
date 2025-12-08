@@ -7,26 +7,32 @@ import {
   getWaterIntakeAnalytics,
   deleteWaterIntake,
   getWaterIntakeEntries,
+  getWaterGoal,
+  updateWaterGoal,
 } from "../controllers/waterIntake.controller.js";
 
 const router = express.Router();
 
-// All routes require authentication and client role
-router.use(protect, authorizeRoles("client", "coach"));
+// All routes require authentication
+router.use(protect);
 
 // Log water intake (only clients can log)
-router.post("/", protect, authorizeRoles("client"), logWaterIntake);
+router.post("/", authorizeRoles("client"), logWaterIntake);
 
-// Get today's water intake
-router.get("/today", getTodayWaterIntake);
+// Get today's water intake (clients and coaches)
+router.get("/today", authorizeRoles("client", "coach"), getTodayWaterIntake);
 
-// Get analytics (day/week/month/year)
-router.get("/analytics", getWaterIntakeAnalytics);
+// Get and update user's daily water goal (only clients)
+router.get("/goal", authorizeRoles("client"), getWaterGoal);
+router.put("/goal", authorizeRoles("client"), updateWaterGoal);
 
-// Get all entries with date range
-router.get("/entries", getWaterIntakeEntries);
+// Get analytics (clients and coaches) - must come before /entries
+router.get("/analytics", authorizeRoles("client", "coach"), getWaterIntakeAnalytics);
 
-// Delete entry
-router.delete("/:id", deleteWaterIntake);
+// Get all entries with date range (clients and coaches) - must come before /:id
+router.get("/entries", authorizeRoles("client", "coach"), getWaterIntakeEntries);
+
+// Delete entry (clients and coaches) - parameterized route must be last
+router.delete("/:id", authorizeRoles("client", "coach"), deleteWaterIntake);
 
 export default router;

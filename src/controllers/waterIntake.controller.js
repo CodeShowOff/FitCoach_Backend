@@ -7,10 +7,12 @@ import User from "../models/User.js";
 
 // Validation schema
 const createWaterIntakeSchema = Joi.object({
-  amountLiters: Joi.number().min(0).max(100).required(),
-  date: Joi.date().max("now").required(),
+  amountLiters: Joi.number().min(0.01).max(100).required().messages({
+    'number.min': 'Amount must be greater than 0',
+    'number.max': 'Amount cannot exceed 100 liters',
+  }),
+  date: Joi.string().required(),
   notes: Joi.string().max(500).optional().allow(null, ""),
-  goal: Joi.number().min(0).max(100).optional(),
 });
 
 // ------------------------------
@@ -25,19 +27,29 @@ export const logWaterIntake = asyncHandler(async (req, res) => {
     throw new Error(error.details[0].message);
   }
 
-  const { amountLiters, date, notes, goal } = value;
+  const { amountLiters, date, notes } = value;
   const clientId = req.user._id;
 
-  // Get coach ID
-  const client = await User.findById(clientId).select("coachId");
-  if (!client || !client.coachId) {
+  // Get coach ID and user's daily water goal
+  const client = await User.findById(clientId).select("coachId dailyWaterGoal");
+  if (!client) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+  if (!client.coachId) {
     res.status(400);
     throw new Error("You must be assigned to a coach to track water intake");
   }
 
-  // Normalize date to start of day for consistency
-  const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
+  const goal = client.dailyWaterGoal || 3.5;
+
+  // Parse date string (format: YYYY-MM-DD) to create UTC date at midnight
+  const [year, month, day] = date.split('-').map(Number);
+  if (!year || !month || !day || month < 1 || month > 12 || day < 1 || day > 31) {
+    res.status(400);
+    throw new Error("Invalid date format. Expected YYYY-MM-DD");
+  }
+  const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
 
   // Create new entry (multiple entries allowed per day)
   const waterIntake = await WaterIntake.create({
@@ -45,8 +57,8 @@ export const logWaterIntake = asyncHandler(async (req, res) => {
     coachId: client.coachId,
     date: startOfDay,
     amountLiters,
-    notes,
-    goal: goal || 3.5,
+    notes: notes || null,
+    goal: goal,
   });
 
   res.status(201).json({
@@ -62,21 +74,53 @@ export const logWaterIntake = asyncHandler(async (req, res) => {
 // @access Private (Client)
 // ------------------------------
 export const getTodayWaterIntake = asyncHandler(async (req, res) => {
-  const clientId = req.user._id;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Allow coach to view client's data via query param, otherwise use own ID
+  let clientId = req.user.role === 'coach' && req.query.clientId 
+    ? req.query.clientId 
+    : req.user._id;
+  
+  // Ensure it's a valid ObjectId
+  if (typeof clientId === 'string') {
+    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+      res.status(400);
+      throw new Error("Invalid client ID");
+    }
+    clientId = new mongoose.Types.ObjectId(clientId);
+  }
+  
+  // Allow optional date parameter, default to today
+  let targetDate;
+  if (req.query.date) {
+    targetDate = new Date(req.query.date);
+    if (isNaN(targetDate.getTime())) {
+      res.status(400);
+      throw new Error("Invalid date format");
+    }
+  } else {
+    targetDate = new Date();
+  }
+  
+  // Get the date in UTC to match stored dates
+  const today = new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0));
 
   const endOfDay = new Date(today);
-  endOfDay.setHours(23, 59, 59, 999);
+  endOfDay.setUTCHours(23, 59, 59, 999);
+
+  // Get user's saved daily water goal
+  const user = await User.findById(clientId).select("dailyWaterGoal");
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+  const goal = user.dailyWaterGoal || 3.5;
 
   // Get all entries for today and sum them up
   const entries = await WaterIntake.find({
     clientId,
     date: { $gte: today, $lte: endOfDay },
-  });
+  }).sort({ createdAt: 1 });
 
   const totalAmount = entries.reduce((sum, entry) => sum + entry.amountLiters, 0);
-  const goal = entries.length > 0 ? entries[0].goal : 3.5;
 
   res.json({
     success: true,
@@ -103,30 +147,58 @@ export const getTodayWaterIntake = asyncHandler(async (req, res) => {
 // @query date: date to analyze (defaults to today)
 // ------------------------------
 export const getWaterIntakeAnalytics = asyncHandler(async (req, res) => {
-  const clientId = req.user._id;
-  const period = req.query.period || "month"; // day, week, month, year
+  // Allow coach to view client's data via query param, otherwise use own ID
+  let clientId = req.user.role === 'coach' && req.query.clientId 
+    ? req.query.clientId 
+    : req.user._id;
+  
+  // Ensure it's a valid ObjectId
+  if (typeof clientId === 'string') {
+    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+      res.status(400);
+      throw new Error("Invalid client ID");
+    }
+    clientId = new mongoose.Types.ObjectId(clientId);
+  }
+  
+  const period = req.query.period || "month";
+  
+  // Validate period
+  if (!['day', 'week', 'month', 'year'].includes(period)) {
+    res.status(400);
+    throw new Error("Invalid period. Must be 'day', 'week', 'month', or 'year'");
+  }
+  
   const dateParam = req.query.date ? new Date(req.query.date) : new Date();
+  
+  // Validate date
+  if (isNaN(dateParam.getTime())) {
+    res.status(400);
+    throw new Error("Invalid date format");
+  }
+  
   dateParam.setHours(0, 0, 0, 0);
 
   let startDate, endDate;
 
   if (period === "day") {
-    startDate = new Date(dateParam);
-    endDate = new Date(dateParam);
-    endDate.setDate(endDate.getDate() + 1);
-  } else if (period === "week") {
-    startDate = new Date(dateParam);
-    startDate.setDate(startDate.getDate() - startDate.getDay()); // Start of week
+    startDate = new Date(Date.UTC(dateParam.getFullYear(), dateParam.getMonth(), dateParam.getDate(), 0, 0, 0, 0));
     endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + 7);
+    endDate.setUTCHours(23, 59, 59, 999);
+  } else if (period === "week") {
+    // Start of week (Sunday)
+    startDate = new Date(Date.UTC(dateParam.getFullYear(), dateParam.getMonth(), dateParam.getDate(), 0, 0, 0, 0));
+    startDate.setUTCDate(startDate.getUTCDate() - startDate.getUTCDay());
+    // End of week (Saturday)
+    endDate = new Date(startDate);
+    endDate.setUTCDate(endDate.getUTCDate() + 6);
+    endDate.setUTCHours(23, 59, 59, 999);
   } else if (period === "month") {
-    startDate = new Date(dateParam.getFullYear(), dateParam.getMonth(), 1);
-    endDate = new Date(dateParam.getFullYear(), dateParam.getMonth() + 1, 0);
-    endDate.setHours(23, 59, 59, 999);
+    startDate = new Date(Date.UTC(dateParam.getFullYear(), dateParam.getMonth(), 1, 0, 0, 0, 0));
+    endDate = new Date(Date.UTC(dateParam.getFullYear(), dateParam.getMonth() + 1, 0, 23, 59, 59, 999));
   } else if (period === "year") {
-    startDate = new Date(dateParam.getFullYear(), 0, 1);
-    endDate = new Date(dateParam.getFullYear(), 11, 31);
-    endDate.setHours(23, 59, 59, 999);
+    startDate = new Date(Date.UTC(dateParam.getFullYear(), 0, 1, 0, 0, 0, 0));
+    endDate = new Date(Date.UTC(dateParam.getFullYear(), 11, 31, 23, 59, 59, 999));
   }
 
   // Aggregate based on period
@@ -136,7 +208,7 @@ export const getWaterIntakeAnalytics = asyncHandler(async (req, res) => {
     // Get all entries for the day
     const entries = await WaterIntake.find({
       clientId,
-      date: { $gte: startDate, $lt: endDate },
+      date: { $gte: startDate, $lte: endDate },
     }).sort({ createdAt: 1 });
 
     const total = entries.reduce((sum, e) => sum + e.amountLiters, 0);
@@ -160,7 +232,7 @@ export const getWaterIntakeAnalytics = asyncHandler(async (req, res) => {
         date: dateParam.toISOString().split("T")[0],
         amount: total.toFixed(2),
         goal: goal.toFixed(2),
-        percentage: ((total / goal) * 100).toFixed(1),
+        percentage: goal > 0 ? ((total / goal) * 100).toFixed(1) : '0.0',
         entries: entries.map((e) => ({
           _id: e._id,
           time: e.createdAt,
@@ -175,7 +247,7 @@ export const getWaterIntakeAnalytics = asyncHandler(async (req, res) => {
       {
         $match: {
           clientId: new mongoose.Types.ObjectId(clientId),
-          date: { $gte: startDate, $lt: endDate },
+          date: { $gte: startDate, $lte: endDate },
         },
       },
       {
@@ -245,7 +317,7 @@ export const getWaterIntakeAnalytics = asyncHandler(async (req, res) => {
   const totalAmount = data.reduce((sum, d) => sum + (d.total || 0), 0);
   const avgGoal = data.length > 0 
     ? (data.reduce((sum, d) => sum + (d.goal || 3.5), 0) / data.length).toFixed(2)
-    : 3.5;
+    : "3.50";
 
   // Calculate unique days tracked based on period
   let daysTracked = 0;
@@ -259,6 +331,36 @@ export const getWaterIntakeAnalytics = asyncHandler(async (req, res) => {
     daysTracked = data.reduce((sum, d) => sum + (d.days ? d.days.length : 0), 0);
   }
 
+  // Fill in missing days for week and month views
+  let filledData = data;
+  if (period === "week" || period === "month") {
+    const dataMap = new Map(data.map(d => [d._id, d]));
+    filledData = [];
+    
+    const currentDate = new Date(startDate);
+    const endDateCopy = new Date(endDate);
+    
+    while (currentDate <= endDateCopy) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const existing = dataMap.get(dateStr);
+      
+      if (existing) {
+        filledData.push(existing);
+      } else {
+        // Add placeholder for missing day
+        filledData.push({
+          _id: dateStr,
+          total: 0,
+          goal: parseFloat(avgGoal) || 3.5,
+          count: 0,
+        });
+      }
+      
+      // Use UTC methods to match UTC dates
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    }
+  }
+
   res.json({
     success: true,
     period,
@@ -270,15 +372,19 @@ export const getWaterIntakeAnalytics = asyncHandler(async (req, res) => {
       totalAmount: totalAmount.toFixed(2),
       averageGoal: avgGoal,
       daysTracked: daysTracked,
-      averagePerDay: period === "day" ? "-" : (totalAmount / (daysTracked || 1)).toFixed(2),
+      averagePerDay: daysTracked > 0 ? (totalAmount / daysTracked).toFixed(2) : "0.00",
     },
-    data: data.map((d) => ({
-      date: d._id || d.month,
-      amount: d.total.toFixed(2),
-      goal: typeof d.goal === "number" ? d.goal.toFixed(2) : d.goal,
-      percentage: ((d.total / (d.goal || 3.5)) * 100).toFixed(1),
-      ...(period === "year" && d.days ? { daysInMonth: d.days.length } : {}),
-    })),
+    data: filledData.map((d) => {
+      const amount = typeof d.total === 'number' ? d.total : 0;
+      const goal = typeof d.goal === 'number' ? d.goal : 3.5;
+      return {
+        date: d._id || d.month,
+        amount: amount.toFixed(2),
+        goal: goal.toFixed(2),
+        percentage: goal > 0 ? ((amount / goal) * 100).toFixed(1) : '0.0',
+        ...(period === "year" && d.days ? { daysInMonth: d.days.length } : {}),
+      };
+    }),
   });
 });
 
@@ -291,19 +397,33 @@ export const deleteWaterIntake = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user._id;
 
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400);
+    throw new Error("Invalid water intake entry ID");
+  }
+
   const waterIntake = await WaterIntake.findById(id);
   if (!waterIntake) {
     res.status(404);
     throw new Error("Water intake entry not found");
   }
 
-  // Check authorization
-  if (
-    waterIntake.clientId.toString() !== userId.toString() &&
-    waterIntake.coachId.toString() !== userId.toString()
-  ) {
+  // Check authorization - only the client who created it can delete
+  // Coaches can view but should not delete client entries
+  const isClient = waterIntake.clientId.toString() === userId.toString();
+  const isCoach = req.user.role === 'coach' && waterIntake.coachId.toString() === userId.toString();
+  
+  if (!isClient && !isCoach) {
     res.status(403);
     throw new Error("Not authorized to delete this entry");
+  }
+  
+  // Additional check: if user is coach, they should not be allowed to delete
+  // Only the client themselves can delete their own entries
+  if (req.user.role === 'coach') {
+    res.status(403);
+    throw new Error("Coaches cannot delete client water intake entries");
   }
 
   await WaterIntake.findByIdAndDelete(id);
@@ -321,27 +441,55 @@ export const deleteWaterIntake = asyncHandler(async (req, res) => {
 // @query startDate, endDate
 // ------------------------------
 export const getWaterIntakeEntries = asyncHandler(async (req, res) => {
-  const clientId = req.user._id;
+  // Allow coach to view client's data via query param, otherwise use own ID
+  let clientId = req.user.role === 'coach' && req.query.clientId 
+    ? req.query.clientId 
+    : req.user._id;
+  
+  // Ensure it's a valid ObjectId
+  if (typeof clientId === 'string') {
+    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+      res.status(400);
+      throw new Error("Invalid client ID");
+    }
+    clientId = new mongoose.Types.ObjectId(clientId);
+  }
+  
   const { startDate, endDate, limit = 100, page = 1 } = req.query;
+
+  // Validate pagination parameters
+  const validLimit = Math.min(Math.max(parseInt(limit) || 100, 1), 500);
+  const validPage = Math.max(parseInt(page) || 1, 1);
 
   const filter = { clientId };
 
   if (startDate || endDate) {
     filter.date = {};
-    if (startDate) filter.date.$gte = new Date(startDate);
+    if (startDate) {
+      const start = new Date(startDate);
+      if (isNaN(start.getTime())) {
+        res.status(400);
+        throw new Error("Invalid start date format");
+      }
+      filter.date.$gte = start;
+    }
     if (endDate) {
       const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
+      if (isNaN(end.getTime())) {
+        res.status(400);
+        throw new Error("Invalid end date format");
+      }
+      end.setUTCHours(23, 59, 59, 999);
       filter.date.$lte = end;
     }
   }
 
-  const skip = (page - 1) * limit;
+  const skip = (validPage - 1) * validLimit;
 
   const entries = await WaterIntake.find(filter)
-    .sort({ date: -1 })
+    .sort({ date: -1, createdAt: -1 })
     .skip(skip)
-    .limit(limit);
+    .limit(validLimit);
 
   const total = await WaterIntake.countDocuments(filter);
 
@@ -350,8 +498,68 @@ export const getWaterIntakeEntries = asyncHandler(async (req, res) => {
     data: entries,
     pagination: {
       total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit),
+      page: validPage,
+      limit: validLimit,
+      totalPages: Math.ceil(total / validLimit),
+    },
+  });
+});
+
+// ------------------------------
+// 🎯 @desc Get user's daily water goal
+// @route GET /api/v1/water-intake/goal
+// @access Private (Client)
+// ------------------------------
+export const getWaterGoal = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id).select("dailyWaterGoal");
+  
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+  
+  res.json({
+    success: true,
+    data: {
+      goal: user.dailyWaterGoal || 3.5,
+    },
+  });
+});
+
+// ------------------------------
+// 🎯 @desc Update user's daily water goal
+// @route PUT /api/v1/water-intake/goal
+// @access Private (Client)
+// ------------------------------
+export const updateWaterGoal = asyncHandler(async (req, res) => {
+  const { goal } = req.body;
+
+  if (goal === undefined || goal === null) {
+    res.status(400);
+    throw new Error("Goal is required");
+  }
+
+  if (typeof goal !== 'number' || isNaN(goal) || goal < 0.5 || goal > 20) {
+    res.status(400);
+    throw new Error("Goal must be a number between 0.5 and 20 liters");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    { dailyWaterGoal: goal },
+    { new: true, runValidators: true }
+  ).select("dailyWaterGoal");
+  
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+
+  res.json({
+    success: true,
+    message: "Daily water goal updated successfully",
+    data: {
+      goal: user.dailyWaterGoal,
     },
   });
 });

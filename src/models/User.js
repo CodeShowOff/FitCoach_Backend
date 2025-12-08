@@ -229,6 +229,12 @@ const userSchema = new mongoose.Schema(
       enum: ["None", "< 1 liter/day", "1–2 liters/day", "2–3 liters/day", "> 3 liters/day", null],
       default: null,
     },
+    dailyWaterGoal: {
+      type: Number,
+      min: 0,
+      max: 20,
+      default: 3.5,
+    },
     personalGoals: {
       type: String,
       trim: true,
