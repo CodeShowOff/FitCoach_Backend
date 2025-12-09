@@ -17,6 +17,9 @@ import ContactUs from "../models/ContactUs.js";
 import Feedback from "../models/Feedback.js";
 import WaterIntake from "../models/WaterIntake.js";
 import PlatformSubscription from "../models/PlatformSubscription.js";
+import Conversation from "../models/Conversation.js";
+import Message from "../models/Message.js";
+import ConversationMember from "../models/ConversationMember.js";
 
 dotenv.config({ quiet: true });
 
@@ -46,6 +49,9 @@ async function createIndexes() {
       Feedback.createIndexes(),
       WaterIntake.createIndexes(),
       PlatformSubscription.createIndexes(),
+      Conversation.createIndexes(),
+      Message.createIndexes(),
+      ConversationMember.createIndexes(),
     ]);
 
     console.log("Indexes created successfully for all models.");

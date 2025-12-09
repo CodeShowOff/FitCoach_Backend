@@ -17,6 +17,7 @@ import Notification from "../models/Notification.js";
 import Voucher from "../models/Voucher.js";
 import ContactRequest from "../models/ContactRequest.js";
 import { purgeStaleUnverifiedUsers } from "../jobs/reminders.job.js";
+import { cleanupOldMessages, getCleanupStats } from "../jobs/chatCleanup.job.js";
 import cloudinary from "../config/cloudinary.js";
 import streamifier from "streamifier";
 
@@ -816,5 +817,34 @@ export const getPaymentQr = asyncHandler(async (req, res) => {
     data: {
       paymentQrUrl: admin.paymentQrUrl || null,
     },
+  });
+});
+
+// ------------------------------
+// @desc Get chat cleanup statistics
+// @route GET /api/v1/admin/chat-cleanup/stats
+// @access Private (Admin only)
+// ------------------------------
+export const getChatCleanupStats = asyncHandler(async (req, res) => {
+  const stats = await getCleanupStats();
+
+  res.json({
+    success: true,
+    data: stats,
+  });
+});
+
+// ------------------------------
+// @desc Manually trigger chat message cleanup
+// @route POST /api/v1/admin/chat-cleanup
+// @access Private (Admin only)
+// ------------------------------
+export const triggerChatCleanup = asyncHandler(async (req, res) => {
+  const result = await cleanupOldMessages();
+
+  res.json({
+    success: true,
+    message: `Chat cleanup completed: ${result.deleted} messages deleted, ${result.imagesDeleted} images removed`,
+    data: result,
   });
 });

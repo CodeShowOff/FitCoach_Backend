@@ -1,4 +1,4 @@
- 
+// note: this file is deprecated and not used anymore so dont see this.
 // src/models/ProgressLog.js
 import mongoose from "mongoose";
 

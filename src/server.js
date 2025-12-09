@@ -1,7 +1,9 @@
 import dotenv from "dotenv";
+import http from "http";
 import connectDB from "./config/db.js";
 import { initializeScheduledJobs } from "./config/scheduler.js";
 import app from "./app.js";
+import { initializeSocketServer } from "./socket/socketServer.js";
 
 // Load environment variables
 dotenv.config();
@@ -26,6 +28,14 @@ requiredEnv.forEach((key) => {
 const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || "development";
 
+// Parse CORS origins for Socket.IO
+const parseOrigins = (value) => {
+  if (!value) return [];
+  return [...new Set(
+    value.split(",").map((origin) => origin.trim()).filter(Boolean)
+  )];
+};
+
 const startServer = async () => {
   try {
     await connectDB();
@@ -39,12 +49,20 @@ const startServer = async () => {
     process.exit(1);
   }
 
-  app.listen(PORT, (error) => {
+  // Create HTTP server from Express app
+  const httpServer = http.createServer(app);
+
+  // Initialize Socket.IO with the HTTP server
+  const clientOrigins = parseOrigins(process.env.CLIENT_URL);
+  initializeSocketServer(httpServer, clientOrigins);
+
+  httpServer.listen(PORT, (error) => {
     if (error) {
       console.error("Failed to start the server:", error);
       process.exit(1);
     }
     console.log(`🚀 Server running on port ${PORT} in ${NODE_ENV} mode`);
+    console.log(`🔌 Socket.IO enabled for real-time chat`);
     
     // Initialize scheduled jobs (cron tasks)
     try {

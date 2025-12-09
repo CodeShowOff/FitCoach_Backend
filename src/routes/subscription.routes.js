@@ -7,6 +7,7 @@ import {
   updateSubscriptionStatus,
   getMyCurrentPlan,
   cancelMySubscription,
+  getClientsByPlan,
 } from "../controllers/subscription.controller.js";
 import { protect, authorizeRoles } from "../middlewares/auth.middleware.js";
 
@@ -63,6 +64,16 @@ router.patch(
   protect,
   authorizeRoles("coach", "admin"),
   updateSubscriptionStatus
+);
+
+// @route   GET /api/v1/subscriptions/plan/:planId/clients
+// @desc    Get all clients subscribed to a specific plan
+// @access  Private (Coach)
+router.get(
+  "/plan/:planId/clients",
+  protect,
+  authorizeRoles("coach"),
+  getClientsByPlan
 );
 
 export default router;

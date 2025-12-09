@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { expireCompletedSubscriptions } from "../jobs/subscriptions.job.js";
 import { initializeSubscriptionChecks } from "../jobs/subscriptionCheck.job.js";
+import { cleanupOldMessages } from "../jobs/chatCleanup.job.js";
 
 /**
  * Initialize all scheduled jobs
@@ -16,6 +17,18 @@ export const initializeScheduledJobs = () => {
       }
     } catch (error) {
       console.error("❌ Subscription expiry cron job failed:", error);
+    }
+  });
+
+  // Schedule chat message cleanup - runs daily at 3 AM
+  cron.schedule("0 3 * * *", async () => {
+    try {
+      const result = await cleanupOldMessages();
+      if (result.deleted > 0) {
+        console.log(`🧹 Cron: ${result.deleted} old message(s) cleaned up`);
+      }
+    } catch (error) {
+      console.error("❌ Chat cleanup cron job failed:", error);
     }
   });
 

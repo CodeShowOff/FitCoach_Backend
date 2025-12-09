@@ -5,6 +5,7 @@ import Subscription from "../models/Subscription.js";
 import Plan from "../models/Plan.js";
 import User from "../models/User.js";
 import { getPlanSummariesForClients } from "../services/planSummary.service.js";
+import { onSubscriptionApproved, onSubscriptionEnded } from "../services/chat.service.js";
 
 // ------------------------------
 // 🧩 Validation Schemas
@@ -265,6 +266,13 @@ export const updateSubscriptionStatus = asyncHandler(async (req, res) => {
     subscription.endDate = end;
 
     // Expire any other active subscriptions for this client
+    const expiredSubs = await Subscription.find({
+      _id: { $ne: subscription._id },
+      clientId: subscription.clientId,
+      status: "approved",
+      endDate: { $gte: subscription.startDate },
+    });
+
     await Subscription.updateMany(
       {
         _id: { $ne: subscription._id },
@@ -274,6 +282,22 @@ export const updateSubscriptionStatus = asyncHandler(async (req, res) => {
       },
       { $set: { status: "expired" } }
     );
+
+    // Remove client from expired plan groups
+    for (const expiredSub of expiredSubs) {
+      onSubscriptionEnded({
+        clientId: expiredSub.clientId,
+        planId: expiredSub.planId,
+      }).catch((err) => console.error("Failed to remove from plan group:", err));
+    }
+
+    // Add client to new plan group
+    onSubscriptionApproved({
+      clientId: subscription.clientId,
+      coachId: subscription.coachId,
+      planId: subscription.planId,
+      planTitle: subscription.planTitle,
+    }).catch((err) => console.error("Failed to add to plan group:", err));
   }
 
   await subscription.save();
@@ -311,6 +335,12 @@ export const cancelMySubscription = asyncHandler(async (req, res) => {
   subscription.status = "cancelled";
   if (wasApproved) {
     subscription.endDate = new Date();
+    
+    // Remove client from plan group when cancelling active subscription
+    onSubscriptionEnded({
+      clientId: subscription.clientId,
+      planId: subscription.planId,
+    }).catch((err) => console.error("Failed to remove from plan group:", err));
   }
 
   await subscription.save();
@@ -396,5 +426,72 @@ export const getMyCurrentPlan = asyncHandler(async (req, res) => {
           plan: fallbackPlan,
         }
       : null,
+  });
+});
+
+// ------------------------------
+// 📋 @desc Get all clients subscribed to a specific plan
+// @route GET /api/v1/subscriptions/plan/:planId/clients
+// @access Private (Coach)
+// ------------------------------
+export const getClientsByPlan = asyncHandler(async (req, res) => {
+  const { planId } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // Verify the plan exists and belongs to the coach
+  const plan = await Plan.findById(planId);
+  if (!plan) {
+    res.status(404);
+    throw new Error("Plan not found");
+  }
+
+  if (plan.coachId.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error("You can only view clients subscribed to your own plans");
+  }
+
+  // Get all approved subscriptions for this plan that are not expired or cancelled
+  const now = new Date();
+  const query = {
+    planId,
+    status: "approved",
+    endDate: { $gte: now },
+  };
+
+  const [subscriptions, totalCount] = await Promise.all([
+    Subscription.find(query)
+      .populate("clientId", "fullName email phone avatarUrl")
+      .sort({ startDate: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Subscription.countDocuments(query),
+  ]);
+
+  const clients = subscriptions.map((sub) => ({
+    _id: sub.clientId._id,
+    fullName: sub.clientId.fullName,
+    email: sub.clientId.email,
+    phone: sub.clientId.phone,
+    avatarUrl: sub.clientId.avatarUrl,
+    subscriptionId: sub._id,
+    startDate: sub.startDate,
+    endDate: sub.endDate,
+  }));
+
+  res.json({
+    success: true,
+    data: {
+      clients,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount / limit),
+        totalItems: totalCount,
+        itemsPerPage: limit,
+      },
+      planTitle: plan.title,
+    },
   });
 });

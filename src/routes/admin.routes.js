@@ -20,6 +20,8 @@ import {
   processDeletionRequest,
   uploadPaymentQr,
   getPaymentQr,
+  getChatCleanupStats,
+  triggerChatCleanup,
 } from "../controllers/admin.controller.js";
 import { protect, authorizeRoles } from "../middlewares/auth.middleware.js";
 import upload from "../middlewares/upload.middleware.js";
@@ -179,6 +181,26 @@ router.get(
   protect,
   authorizeRoles("admin"),
   getPaymentQr
+);
+
+// @route   GET /api/v1/admin/chat-cleanup/stats
+// @desc    Get chat cleanup statistics (messages to be deleted)
+// @access  Private (Admin only)
+router.get(
+  "/chat-cleanup/stats",
+  protect,
+  authorizeRoles("admin"),
+  getChatCleanupStats
+);
+
+// @route   POST /api/v1/admin/chat-cleanup
+// @desc    Manually trigger chat message cleanup (delete messages older than 7 days)
+// @access  Private (Admin only)
+router.post(
+  "/chat-cleanup",
+  protect,
+  authorizeRoles("admin"),
+  triggerChatCleanup
 );
 
 export default router;

@@ -16,6 +16,7 @@ import {
   sendWelcomeEmail,
 } from "../services/email.service.js";
 import { createNotification } from "./notifications.controller.js";
+import { initializeClientChat } from "../services/chat.service.js";
 
 // ------------------------------
 // ⏱️ Shared duration helpers
@@ -375,6 +376,13 @@ export const verifyRegisterOtp = asyncHandler(async (req, res) => {
     message: `Hi ${user.fullName}! Welcome aboard. We're excited to have you here. Start exploring your dashboard to get started.`,
     type: "system",
   }).catch(() => {});
+
+  // Initialize chat for clients (add to coach's global broadcast + create direct chat)
+  if (user.role === "client" && user.coachId) {
+    initializeClientChat(user._id, user.coachId).catch((err) => {
+      console.error("Failed to initialize client chat:", err);
+    });
+  }
 
   res.status(200).json({
     success: true,
