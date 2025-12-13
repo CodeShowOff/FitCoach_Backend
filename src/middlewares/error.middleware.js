@@ -100,6 +100,8 @@ export const errorHandler = (err, req, res, next) => {
   res.status(statusCode).json({
     success: false,
     message: userMessage,
+    // Include error code if present (for specific error handling on frontend)
+    ...(err.code && { code: err.code }),
     ...(process.env.NODE_ENV === "development" && {
       stack: err.stack,
       originalMessage: err.message,

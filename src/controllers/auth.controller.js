@@ -78,6 +78,12 @@ const hashOtp = (otp) => {
   return crypto.createHash("sha256").update(String(otp)).digest("hex");
 };
 
+// Timing-safe comparison to prevent timing attacks
+const timingSafeCompare = (a, b) => {
+  if (!a || !b || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+};
+
 // ------------------------------
 // 🧩 Validation Schemas (Joi)
 // ------------------------------
@@ -336,7 +342,7 @@ export const verifyRegisterOtp = asyncHandler(async (req, res) => {
   }
 
   const incomingHash = hashOtp(otp);
-  if (incomingHash !== user.emailVerificationOtpHash) {
+  if (!timingSafeCompare(incomingHash, user.emailVerificationOtpHash)) {
     res.status(400);
     throw new Error("Invalid verification code");
   }
@@ -476,6 +482,12 @@ export const loginUser = asyncHandler(async (req, res) => {
 
   // Store refresh token for this session (do not revoke other devices)
   try {
+    // Clean up expired tokens for this user
+    await Token.deleteMany({ 
+      userId: user._id, 
+      expiresAt: { $lt: new Date() } 
+    });
+
     await Token.create({
       userId: user._id,
       token: tokens.refreshToken,
@@ -583,7 +595,7 @@ export const resetPasswordWithOtp = asyncHandler(async (req, res) => {
   }
 
   const incomingHash = hashOtp(otp);
-  if (incomingHash !== user.resetPasswordToken) {
+  if (!timingSafeCompare(incomingHash, user.resetPasswordToken)) {
     res.status(400);
     throw new Error("Invalid reset code");
   }
@@ -593,9 +605,12 @@ export const resetPasswordWithOtp = asyncHandler(async (req, res) => {
   user.resetPasswordExpire = undefined;
   await user.save();
 
+  // Security: Invalidate all existing sessions after password reset
+  await Token.deleteMany({ userId: user._id });
+
   res.status(200).json({
     success: true,
-    message: "Password has been reset successfully",
+    message: "Password has been reset successfully. Please login with your new password.",
   });
 });
 
@@ -672,7 +687,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     throw new Error("Invalid or revoked refresh token");
   }
 
-  // Verify signature
+  // Verify signature first before any DB operations
   let decoded;
   try {
     decoded = verifyRefreshToken(refreshToken);
@@ -690,16 +705,39 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     throw new Error("User no longer exists");
   }
 
+  // Check if user's email is verified
+  if (!user.emailVerified) {
+    await Token.deleteOne({ token: refreshToken });
+    res.status(403);
+    throw new Error("Email verification required");
+  }
+
+  // Check if user's account is active
+  if (user.isActive === false) {
+    await Token.deleteOne({ token: refreshToken });
+    res.status(403);
+    const error = new Error("Account is deactivated. Please contact the administrator.");
+    error.code = "ACCOUNT_DEACTIVATED";
+    throw error;
+  }
+
   // Issue new access token with fresh role
   const newAccessToken = signAccessToken({ id: user._id, role: user.role });
 
   // (Optional) Rotate refresh token for extra safety
   const newRefreshToken = signRefreshToken({ id: user._id });
 
-  // Update DB token
-  storedToken.token = newRefreshToken;
-  storedToken.expiresAt = refreshExpiryDate();
-  await storedToken.save();
+  // Update DB token with optimistic locking to prevent race conditions
+  const updateResult = await Token.findOneAndUpdate(
+    { _id: storedToken._id, token: refreshToken }, // ensure it hasn't changed
+    { token: newRefreshToken, expiresAt: refreshExpiryDate() },
+    { new: true }
+  );
+
+  if (!updateResult) {
+    res.status(403);
+    throw new Error("Token was already refreshed. Please try again.");
+  }
 
   // Send new refresh token cookie
   res.cookie("refreshToken", newRefreshToken, {
@@ -713,5 +751,14 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     success: true,
     message: "Access token refreshed successfully",
     accessToken: newAccessToken,
+    user: {
+      _id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+      referralCode: user.referralCode,
+      coachId: user.coachId,
+      avatarUrl: user.avatarUrl,
+    },
   });
 });

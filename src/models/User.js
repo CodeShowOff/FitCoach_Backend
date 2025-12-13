@@ -180,10 +180,8 @@ const userSchema = new mongoose.Schema(
     }],
     
     // Basic Info (non-tracking fields)
-    age: {
-      type: Number,
-      min: 5,
-      max: 120,
+    dateOfBirth: {
+      type: Date,
       default: null,
     },
     gender: {

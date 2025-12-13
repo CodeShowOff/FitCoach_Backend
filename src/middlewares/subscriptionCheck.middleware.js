@@ -57,9 +57,11 @@ export const checkCoachSubscription = asyncHandler(async (req, res, next) => {
       });
     }
 
-    // Block access - return 403 with specific message
+    // Block access - return 403 with specific error code
     res.status(403);
-    throw new Error("SUBSCRIPTION_EXPIRED");
+    const error = new Error("Your subscription has expired. Please renew to continue.");
+    error.code = "SUBSCRIPTION_EXPIRED";
+    throw error;
   }
 
   // Subscription is valid, allow access
@@ -100,7 +102,9 @@ export const allowSubscriptionRoutes = asyncHandler(async (req, res, next) => {
 
     if (!isAllowed) {
       res.status(403);
-      throw new Error("SUBSCRIPTION_EXPIRED");
+      const error = new Error("Your subscription has expired. Please renew to continue.");
+      error.code = "SUBSCRIPTION_EXPIRED";
+      throw error;
     }
   }
 

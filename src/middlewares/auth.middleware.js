@@ -21,12 +21,6 @@ export const protect = asyncHandler(async (req, res, next) => {
     throw new Error("Not authorized, token missing");
   }
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    res.status(500);
-    throw new Error("Server misconfiguration, JWT secret missing");
-  }
-
   try {
     const decoded = verifyAccessToken(token);
     req.user = await User.findById(decoded.id).select("-password");
@@ -40,7 +34,9 @@ export const protect = asyncHandler(async (req, res, next) => {
     }
     if (req.user.isActive === false) {
       res.status(403);
-      throw new Error("Account is deactivated. Please contact the administrator.");
+      const error = new Error("Account is deactivated. Please contact the administrator.");
+      error.code = "ACCOUNT_DEACTIVATED";
+      throw error;
     }
     next();
   } catch (err) {

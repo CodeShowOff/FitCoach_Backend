@@ -62,7 +62,8 @@ router.post("/reset-password", authLimiter, resetPasswordWithOtp);
 router.post("/refresh", refreshAccessToken);
 
 // @route   POST /api/v1/auth/logout
-// @desc    Logout user
+// @desc    Logout user (clears refresh token cookie)
+// @access  Public (refresh token in httpOnly cookie provides security)
 router.post("/logout", logoutUser);
 
 // @route   POST /api/v1/auth/logout-all

@@ -5,6 +5,29 @@ import Joi from "joi";
 import User from "../models/User.js";
 
 // ------------------------------
+// 🧩 Helper Functions
+// ------------------------------
+/**
+ * Calculate age from date of birth
+ * @param {Date} dateOfBirth - The date of birth
+ * @returns {number|null} - The calculated age or null if no DOB
+ */
+const calculateAge = (dateOfBirth) => {
+  if (!dateOfBirth) return null;
+  
+  const today = new Date();
+  const birthDate = new Date(dateOfBirth);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  
+  return age;
+};
+
+// ------------------------------
 // 🧩 Validation Schema
 // ------------------------------
 const progressSchema = Joi.object({
@@ -13,7 +36,7 @@ const progressSchema = Joi.object({
   notes: Joi.string().max(500).optional().allow(""),
   
   // Basic Info (non-tracking)
-  age: Joi.number().min(5).max(120).optional(),
+  dateOfBirth: Joi.date().max('now').optional(),
   gender: Joi.string().valid("Male", "Female", "Other").optional(),
   
   // Smart Scale Measurements (tracking)
@@ -95,7 +118,7 @@ export const addProgressLog = asyncHandler(async (req, res) => {
 
   const { 
     weight, height, notes,
-    age, gender,
+    dateOfBirth, gender,
     bodyFatPercentage, visceralFatLevel, muscleMass, metabolicAge, bodyWaterPercentage, boneMass,
     dailyActivityLevel, hydrationHabits, personalGoals,
     healthConditions, allergies, medications, pastWeightChanges,
@@ -113,9 +136,9 @@ export const addProgressLog = asyncHandler(async (req, res) => {
   const updates = {};
 
   // Update non-tracking fields (basic info)
-  if (age !== undefined) {
-    user.age = age;
-    updates.age = age;
+  if (dateOfBirth !== undefined) {
+    user.dateOfBirth = dateOfBirth;
+    updates.dateOfBirth = dateOfBirth;
   }
   if (gender !== undefined) {
     user.gender = gender;
@@ -256,7 +279,7 @@ export const addProgressLog = asyncHandler(async (req, res) => {
 export const getMyProgressLogs = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id).select(
     "weightHistory heightHistory bmiHistory notesHistory " +
-    "age gender " +
+    "dateOfBirth gender " +
     "bodyFatPercentageHistory visceralFatLevelHistory muscleMassHistory metabolicAgeHistory bodyWaterPercentageHistory boneMassHistory " +
     "dailyActivityLevel hydrationHabits personalGoals " +
     "healthConditions allergies medications pastWeightChanges " +
@@ -396,7 +419,8 @@ export const getMyProgressLogs = asyncHandler(async (req, res) => {
     data: history,
     // Include non-tracking fields
     profile: {
-      age: user.age,
+      age: calculateAge(user.dateOfBirth),
+      dateOfBirth: user.dateOfBirth,
       gender: user.gender,
       dailyActivityLevel: user.dailyActivityLevel,
       hydrationHabits: user.hydrationHabits,
@@ -593,7 +617,8 @@ export const getClientProgressLogs = asyncHandler(async (req, res) => {
     data: history,
     // Include non-tracking fields
     profile: {
-      age: client.age,
+      age: calculateAge(client.dateOfBirth),
+      dateOfBirth: client.dateOfBirth,
       gender: client.gender,
       dailyActivityLevel: client.dailyActivityLevel,
       hydrationHabits: client.hydrationHabits,
