@@ -691,7 +691,6 @@ export const processDeletionRequest = asyncHandler(async (req, res) => {
       // Client-specific data
       Subscription.deleteMany({ clientId: userId }),
       Order.deleteMany({ clientId: userId }),
-      Plan.deleteMany({ clientId: userId }),
       PlanRequest.deleteMany({ clientId: userId }),
       ProgressPhoto.deleteMany({ clientId: userId }),
       

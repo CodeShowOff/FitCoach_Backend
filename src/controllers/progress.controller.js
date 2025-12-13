@@ -610,3 +610,54 @@ export const getClientProgressLogs = asyncHandler(async (req, res) => {
     },
   });
 });
+
+// ------------------------------
+// 🎯 @desc Get client's goal weight
+// @route GET /api/v1/progress/goal-weight
+// @access Private (Client)
+// ------------------------------
+export const getGoalWeight = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+
+  res.json({
+    success: true,
+    goalWeight: user.goalWeight || null,
+  });
+});
+
+// ------------------------------
+// 🎯 @desc Update client's goal weight
+// @route PUT /api/v1/progress/goal-weight
+// @access Private (Client)
+// ------------------------------
+export const updateGoalWeight = asyncHandler(async (req, res) => {
+  const schema = Joi.object({
+    goalWeight: Joi.number().min(1).max(500).required(),
+  });
+
+  const { error, value } = schema.validate(req.body);
+  if (error) {
+    res.status(400);
+    throw new Error(error.details[0].message);
+  }
+
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+
+  user.goalWeight = value.goalWeight;
+  await user.save();
+
+  res.json({
+    success: true,
+    message: "Goal weight updated successfully",
+    goalWeight: user.goalWeight,
+  });
+});
+

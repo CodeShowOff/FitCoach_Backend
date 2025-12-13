@@ -235,6 +235,40 @@ const userSchema = new mongoose.Schema(
       max: 20,
       default: 3.5,
     },
+    goalWeight: {
+      type: Number,
+      min: 1,
+      max: 500,
+      default: null,
+    },
+    // Water intake tracking - stores last 7 days only
+    waterIntakeLogs: [{
+      date: {
+        type: String, // Store as YYYY-MM-DD in IST
+        required: true,
+      },
+      entries: [{
+        amount: {
+          type: Number,
+          required: true,
+          min: 0.01,
+          max: 100,
+        },
+        time: {
+          type: Date,
+          required: true,
+        },
+        notes: {
+          type: String,
+          trim: true,
+          maxlength: 500,
+        }
+      }],
+      totalAmount: {
+        type: Number,
+        default: 0,
+      }
+    }],
     personalGoals: {
       type: String,
       trim: true,

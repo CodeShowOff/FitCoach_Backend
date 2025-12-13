@@ -44,7 +44,6 @@ export const getPlanSummariesForClients = async (coachId, clientIds = []) => {
       try {
         defaultPlan = await Plan.findOne({
           coachId: normalizedCoachId,
-          isTemplate: true,
           isDefault: true,
         })
           .select("title description durationWeeks price goal isDefault")
@@ -54,7 +53,6 @@ export const getPlanSummariesForClients = async (coachId, clientIds = []) => {
         if (!defaultPlan) {
           fallbackPlan = await Plan.findOne({
             coachId: normalizedCoachId,
-            isTemplate: true,
           })
             .select("title description durationWeeks price goal isDefault")
             .sort({ createdAt: 1 })

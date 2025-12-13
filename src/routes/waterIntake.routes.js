@@ -32,7 +32,7 @@ router.get("/analytics", authorizeRoles("client", "coach"), getWaterIntakeAnalyt
 // Get all entries with date range (clients and coaches) - must come before /:id
 router.get("/entries", authorizeRoles("client", "coach"), getWaterIntakeEntries);
 
-// Delete entry (clients and coaches) - parameterized route must be last
-router.delete("/:id", authorizeRoles("client", "coach"), deleteWaterIntake);
+// Delete entry (only clients can delete their own entries) - parameterized route must be last
+router.delete("/:id", authorizeRoles("client"), deleteWaterIntake);
 
 export default router;

@@ -5,6 +5,8 @@ import {
   addProgressLog,
   getMyProgressLogs,
   getClientProgressLogs,
+  getGoalWeight,
+  updateGoalWeight,
 } from "../controllers/progress.controller.js";
 import { protect, authorizeRoles } from "../middlewares/auth.middleware.js";
 
@@ -23,6 +25,16 @@ router.post("/", protect, authorizeRoles("client"), addProgressLog);
 // @desc    Get logged-in client's progress logs (paginated)
 // @access  Private (Client only)
 router.get("/my", protect, authorizeRoles("client"), getMyProgressLogs);
+
+// @route   GET /api/v1/progress/goal-weight
+// @desc    Get client's goal weight
+// @access  Private (Client only)
+router.get("/goal-weight", protect, authorizeRoles("client"), getGoalWeight);
+
+// @route   PUT /api/v1/progress/goal-weight
+// @desc    Update client's goal weight
+// @access  Private (Client only)
+router.put("/goal-weight", protect, authorizeRoles("client"), updateGoalWeight);
 
 // ------------------------------
 // 🧑‍🏫 Coach Routes

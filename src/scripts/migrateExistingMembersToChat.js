@@ -24,12 +24,9 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, "../../.env") });
 
 import Subscription from "../models/Subscription.js";
-import User from "../models/User.js";
-import Plan from "../models/Plan.js";
 import { 
   initializeClientChat, 
   addClientToPlanGroup,
-  getOrCreateDirectConversation 
 } from "../services/chat.service.js";
 
 // Connect to database

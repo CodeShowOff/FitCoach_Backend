@@ -7,7 +7,6 @@ import {
   getPlanForCoachById,
   getPlanForClientById,
   updatePlanStatus,
-  markTaskCompleted,
   updatePlan,
   deletePlan,
 } from "../controllers/plans.controller.js";
@@ -19,7 +18,6 @@ const router = express.Router();
 // Client routes (placed BEFORE dynamic :id route to avoid '/my' being captured as :id)
 router.get("/my", protect, authorizeRoles("client"), getPlansForClient);
 router.get("/view/:id", protect, authorizeRoles("client"), getPlanForClientById);
-router.patch("/:planId/tasks/:taskIndex", protect, authorizeRoles("client"), markTaskCompleted);
 
 // Coach routes with subscription check
 router.post("/", protect, authorizeRoles("coach"), checkCoachSubscription, createPlan);

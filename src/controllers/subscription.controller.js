@@ -43,7 +43,7 @@ export const createSubscription = asyncHandler(async (req, res) => {
     throw new Error("Plan not found");
   }
 
-  // Ensure plan belongs to the client's coach (templates or direct)
+  // Ensure plan belongs to the client's coach
   const client = await User.findById(req.user._id).select("coachId");
   if (!client?.coachId || plan.coachId._id.toString() !== client.coachId.toString()) {
     res.status(403);
@@ -395,7 +395,6 @@ export const getMyCurrentPlan = asyncHandler(async (req, res) => {
 
   const defaultPlan = await Plan.findOne({
     coachId: client.coachId,
-    isTemplate: true,
     isDefault: true,
   })
     .sort({ createdAt: 1 })
@@ -413,7 +412,6 @@ export const getMyCurrentPlan = asyncHandler(async (req, res) => {
 
   const fallbackPlan = await Plan.findOne({
     coachId: client.coachId,
-    isTemplate: true,
   })
     .sort({ createdAt: 1 })
     .lean();

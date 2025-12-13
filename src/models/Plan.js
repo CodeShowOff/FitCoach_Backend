@@ -1,50 +1,12 @@
 // src/models/Plan.js
 import mongoose from "mongoose";
 
-const taskSchema = new mongoose.Schema(
-  {
-    title: {
-      type: String,
-      required: [true, "Task title is required"],
-      trim: true,
-      maxlength: 100,
-    },
-    description: {
-      type: String,
-      trim: true,
-      maxlength: 500,
-    },
-    completedByClient: {
-      type: Boolean,
-      default: false,
-    },
-    date: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { _id: false }
-);
-
 const planSchema = new mongoose.Schema(
   {
     coachId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Coach ID is required"],
-      index: true,
-    },
-    // allow template plans where clientId can be null
-    clientId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: false,
-      default: null,
-      index: true,
-    },
-    isTemplate: {
-      type: Boolean,
-      default: false,
       index: true,
     },
     title: {
@@ -81,7 +43,6 @@ const planSchema = new mongoose.Schema(
     endDate: {
       type: Date,
     },
-    tasks: [taskSchema],
     status: {
       type: String,
       enum: ["active", "completed", "paused"],
@@ -110,9 +71,8 @@ planSchema.pre("save", function (next) {
 });
 
 // Indexes for query performance
-planSchema.index({ coachId: 1, clientId: 1 });
-planSchema.index({ status: 1, isTemplate: 1 });
-planSchema.index({ coachId: 1, isTemplate: 1, isDefault: 1 });
+planSchema.index({ coachId: 1, status: 1 });
+planSchema.index({ coachId: 1, isDefault: 1 });
 planSchema.index({ createdAt: -1 });
 
 const Plan = mongoose.model("Plan", planSchema);
