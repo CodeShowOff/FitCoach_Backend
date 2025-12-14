@@ -366,6 +366,7 @@ export const verifyRegisterOtp = asyncHandler(async (req, res) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    path: "/",
     maxAge: REFRESH_TOKEN_TTL_MS,
   });
 
@@ -503,6 +504,7 @@ export const loginUser = asyncHandler(async (req, res) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    path: "/",
     maxAge: REFRESH_TOKEN_TTL_MS,
   });
 
@@ -744,6 +746,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    path: "/",
     maxAge: REFRESH_TOKEN_TTL_MS,
   });
 
