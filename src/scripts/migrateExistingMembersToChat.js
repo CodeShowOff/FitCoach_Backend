@@ -24,6 +24,8 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, "../../.env") });
 
 import Subscription from "../models/Subscription.js";
+// Ensure referenced models are registered for populate() in this standalone script
+import "../models/Plan.js";
 import { 
   initializeClientChat, 
   addClientToPlanGroup,
