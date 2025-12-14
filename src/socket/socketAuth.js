@@ -63,7 +63,7 @@ export const socketAuthMiddleware = async (socket, next) => {
 /**
  * Validate that user has access to a conversation
  */
-export const validateConversationAccess = async (userId, conversationId, userRole) => {
+export const validateConversationAccess = async (userId, conversationId) => {
   const Conversation = (await import("../models/Conversation.js")).default;
   const ConversationMember = (await import("../models/ConversationMember.js")).default;
 

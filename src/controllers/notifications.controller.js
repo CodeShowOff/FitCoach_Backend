@@ -137,7 +137,6 @@ export async function createNotification({ recipientId, senderId = null, title =
   try {
     await Notification.create({ recipientId, senderId, title, message, type, meta });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error("Failed to create notification:", e.message);
   }
 }

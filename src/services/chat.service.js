@@ -78,7 +78,7 @@ export const getOrCreateDirectConversation = async (coachId, clientId) => {
   });
 
   if (!conversation) {
-    const [coach, client] = await Promise.all([
+    await Promise.all([
       User.findById(coachId).select("fullName").lean(),
       User.findById(clientId).select("fullName").lean(),
     ]);

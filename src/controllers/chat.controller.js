@@ -4,7 +4,6 @@ import Joi from "joi";
 import streamifier from "streamifier";
 import Conversation from "../models/Conversation.js";
 import ConversationMember from "../models/ConversationMember.js";
-import Message from "../models/Message.js";
 import User from "../models/User.js";
 import cloudinary from "../config/cloudinary.js";
 import {
@@ -461,7 +460,7 @@ export const toggleMute = asyncHandler(async (req, res) => {
 // ------------------------------
 // 🛠️ Helper: Validate user access to conversation
 // ------------------------------
-const validateUserAccess = async (userId, conversationId, userRole) => {
+const validateUserAccess = async (userId, conversationId) => {
   const conversation = await Conversation.findById(conversationId).lean();
 
   if (!conversation || !conversation.isActive) {

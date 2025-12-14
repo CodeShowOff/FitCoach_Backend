@@ -11,7 +11,6 @@ import {
   editMessage,
 } from "../services/chat.service.js";
 import ConversationMember from "../models/ConversationMember.js";
-import Conversation from "../models/Conversation.js";
 
 /**
  * Register chat-related socket event handlers

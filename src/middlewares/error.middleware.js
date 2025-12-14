@@ -75,6 +75,7 @@ const getUserFriendlyMessage = (err) => {
 };
 
 // Centralized Error Handler
+// eslint-disable-next-line no-unused-vars
 export const errorHandler = (err, req, res, next) => {
   // Default status code
   let statusCode = res.statusCode && res.statusCode !== 200 ? res.statusCode : 500;

@@ -1,6 +1,5 @@
 import cron from "node-cron";
 import PlatformSubscription from "../models/PlatformSubscription.js";
-import User from "../models/User.js";
 import Notification from "../models/Notification.js";
 import { sendEmail } from "../services/email.service.js";
 

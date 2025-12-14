@@ -14,7 +14,7 @@ const normalizeIds = (ids = []) => {
       }
       try {
         return new mongoose.Types.ObjectId(value);
-      } catch (err) {
+      } catch {
         return null;
       }
     })
@@ -26,7 +26,7 @@ const ensureObjectId = (value) => {
   if (value instanceof mongoose.Types.ObjectId) return value;
   try {
     return new mongoose.Types.ObjectId(value);
-  } catch (err) {
+  } catch {
     return null;
   }
 };

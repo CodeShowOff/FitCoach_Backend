@@ -233,7 +233,7 @@ export const registerUser = asyncHandler(async (req, res) => {
       fullName,
       otp,
     });
-  } catch (e) {
+  } catch {
     res.status(500);
     throw new Error("Failed to send verification email. Please try again or contact support.");
   }
@@ -293,7 +293,7 @@ export const resendRegisterOtp = asyncHandler(async (req, res) => {
       fullName: user.fullName,
       otp,
     });
-  } catch (e) {
+  } catch {
     res.status(500);
     throw new Error("Failed to send verification email. Please try again or contact support.");
   }
@@ -453,7 +453,7 @@ export const loginUser = asyncHandler(async (req, res) => {
         fullName: user.fullName,
         otp,
       });
-    } catch (e) {
+    } catch {
       res.status(500);
       throw new Error("Failed to send verification email. Please try again or contact support.");
     }
@@ -561,7 +561,7 @@ export const requestPasswordReset = asyncHandler(async (req, res) => {
       fullName: user.fullName,
       otp,
     });
-  } catch (e) {
+  } catch {
     res.status(500);
     throw new Error("Failed to send reset password email. Please try again or contact support.");
   }
@@ -693,7 +693,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
   let decoded;
   try {
     decoded = verifyRefreshToken(refreshToken);
-  } catch (err) {
+  } catch {
     await Token.deleteOne({ token: refreshToken }); // cleanup
     res.status(403);
     throw new Error("Invalid or expired refresh token");
