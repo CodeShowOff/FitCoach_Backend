@@ -107,6 +107,12 @@ const userSchema = new mongoose.Schema(
     },
 
     // Coach-specific fields
+    companyName: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+      default: null,
+    },
     specialization: {
       type: String,
       trim: true,

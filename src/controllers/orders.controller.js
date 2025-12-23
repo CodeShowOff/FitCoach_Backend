@@ -6,6 +6,12 @@ import Product from "../models/Product.js";
 import { validateAndConsumeVoucherForOrder } from "./voucher.controller.js";
 import { createNotification } from "./notifications.controller.js";
 import PDFDocument from "pdfkit";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ------------------------------
 // 🧩 Validation Schemas
@@ -348,10 +354,31 @@ export const generateInvoice = asyncHandler(async (req, res) => {
   // Pipe PDF to response
   doc.pipe(res);
 
-  // Header
-  doc.fontSize(24).font("Helvetica-Bold").text("INVOICE", { align: "center" });
-  doc.moveDown(0.5);
-  doc.fontSize(10).font("Helvetica").text("Pulse Ledger - Health Management Portal", { align: "center" });
+  // Add PulseLedger logo and branding at the top
+  const logoPath = path.join(__dirname, "../utils/logo.png");
+  
+  // Check if logo exists and add it
+  if (fs.existsSync(logoPath)) {
+    try {
+      // Add logo centered at the top
+      doc.image(logoPath, {
+        fit: [80, 80],
+        align: "center",
+        valign: "top"
+      });
+      doc.moveDown(0.3);
+    } catch (err) {
+      console.error("Error adding logo to invoice:", err);
+    }
+  }
+
+  // PulseLedger branding text
+  doc.fontSize(20).font("Helvetica-Bold").fillColor("#2563eb").text("PulseLedger", { align: "center" });
+  doc.fontSize(10).font("Helvetica").fillColor("#6b7280").text("Health Management Portal", { align: "center" });
+  doc.moveDown(1);
+
+  // Invoice header
+  doc.fontSize(24).font("Helvetica-Bold").fillColor("#000000").text("INVOICE", { align: "center" });
   doc.moveDown(2);
 
   // Order details

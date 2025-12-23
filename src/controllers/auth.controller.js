@@ -97,6 +97,11 @@ const registerSchema = Joi.object({
     then: Joi.string().required().label("Coach Referral Code"),
     otherwise: Joi.string().optional(),
   }),
+  companyName: Joi.when("role", {
+    is: "coach",
+    then: Joi.string().min(2).max(200).required().label("Company Name"),
+    otherwise: Joi.string().optional(),
+  }),
   phone: Joi.string().required(),
   whatsappNumber: Joi.string().required(),
 });
@@ -148,6 +153,7 @@ export const registerUser = asyncHandler(async (req, res) => {
     password,
     role,
     coachId, // this will be the referralCode for clients
+    companyName,
     phone,
     whatsappNumber,
   } = value;
@@ -193,6 +199,7 @@ export const registerUser = asyncHandler(async (req, res) => {
       role,
       coachId: assignedCoach,
       coachCode: coachId,
+      companyName: role === "coach" ? companyName : undefined,
       phone,
       whatsappNumber,
       isActive: false,
