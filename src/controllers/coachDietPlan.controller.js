@@ -346,7 +346,24 @@ export const getCoachDietPlanById = asyncHandler(async (req, res) => {
   const plan = await CoachDietPlan.findOne({
     _id: req.params.id,
     coachId: req.user._id,
-  }).populate("subscriptionPlanIds", "title price durationWeeks");
+  })
+    .populate("subscriptionPlanIds", "title price durationWeeks")
+    .populate({
+      path: "weeklySchedule.meals.foods.foodItemId",
+      select: "name nutrition servingSize servingUnit category",
+    })
+    .populate({
+      path: "weeklySchedule.meals.alternatives",
+      select: "name nutrition servingSize servingUnit category",
+    })
+    .populate({
+      path: "meals.foods.foodItemId",
+      select: "name nutrition servingSize servingUnit category",
+    })
+    .populate({
+      path: "meals.alternatives",
+      select: "name nutrition servingSize servingUnit category",
+    });
 
   if (!plan) {
     res.status(404);
@@ -510,7 +527,7 @@ export const createFromTemplate = asyncHandler(async (req, res) => {
     await validateSubscriptionPlans(subscriptionPlanIds, req.user._id);
   }
 
-  // Create plan from template
+  // Create plan from template - convert foodItemId ObjectIds to strings
   const planData = {
     coachId: req.user._id,
     name: name || `${template.name} (Copy)`,
@@ -519,6 +536,8 @@ export const createFromTemplate = asyncHandler(async (req, res) => {
     dailyTargets: template.dailyTargets,
     mealsPerDay: template.mealsPerDay,
     meals: template.sampleMeals,
+    weeklySchedule: template.weeklySchedule,
+    daysPerWeek: template.daysPerWeek,
     dietaryType: template.dietaryType,
     foodsToAvoid: template.foodsToAvoid,
     customInstructions: template.guidelines?.join("\n"),
@@ -527,9 +546,45 @@ export const createFromTemplate = asyncHandler(async (req, res) => {
     thumbnailUrl: template.thumbnailUrl,
   };
 
+  // Convert ObjectIds to strings in meals
+  if (planData.meals && planData.meals.length > 0) {
+    planData.meals = planData.meals.map(meal => ({
+      ...meal.toObject ? meal.toObject() : meal,
+      foods: meal.foods?.map(food => ({
+        ...food.toObject ? food.toObject() : food,
+        foodItemId: food.foodItemId?.toString ? food.foodItemId.toString() : food.foodItemId,
+      })) || [],
+      alternatives: meal.alternatives?.map(alt => alt.toString ? alt.toString() : alt) || [],
+    }));
+  }
+
+  // Convert ObjectIds to strings in weeklySchedule
+  if (planData.weeklySchedule && planData.weeklySchedule.length > 0) {
+    planData.weeklySchedule = planData.weeklySchedule.map(day => ({
+      ...day.toObject ? day.toObject() : day,
+      meals: day.meals?.map(meal => ({
+        ...meal.toObject ? meal.toObject() : meal,
+        foods: meal.foods?.map(food => ({
+          ...food.toObject ? food.toObject() : food,
+          foodItemId: food.foodItemId?.toString ? food.foodItemId.toString() : food.foodItemId,
+        })) || [],
+        alternatives: meal.alternatives?.map(alt => alt.toString ? alt.toString() : alt) || [],
+      })) || [],
+    }));
+  }
+
   // Enrich foods
   if (planData.meals && planData.meals.length > 0) {
     planData.meals = await validateAndEnrichFoods(planData.meals);
+  }
+  
+  // Enrich foods in weekly schedule
+  if (planData.weeklySchedule && planData.weeklySchedule.length > 0) {
+    for (const day of planData.weeklySchedule) {
+      if (day.meals && day.meals.length > 0) {
+        day.meals = await validateAndEnrichFoods(day.meals);
+      }
+    }
   }
 
   const plan = await CoachDietPlan.create(planData);

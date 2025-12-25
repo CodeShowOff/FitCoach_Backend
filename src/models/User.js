@@ -166,6 +166,17 @@ const userSchema = new mongoose.Schema(
       sparse: true,
       index: true,
     },
+    // Coach referral system - tracks who referred this coach
+    referredByCoachId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null, // Only for coaches - stores the coach who referred them
+    },
+    // Flag to track if referral reward has been given
+    referralRewardGiven: {
+      type: Boolean,
+      default: false, // Set to true once the inviter gets their subscription extended
+    },
     
     // Progress tracking - Array-based history
     weightHistory: [{

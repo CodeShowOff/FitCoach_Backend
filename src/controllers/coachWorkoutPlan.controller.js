@@ -287,7 +287,12 @@ export const getCoachWorkoutPlanById = asyncHandler(async (req, res) => {
     _id: req.params.id,
     coachId: req.user._id,
     isActive: true,
-  }).populate("subscriptionPlanIds", "title price durationWeeks");
+  })
+    .populate("subscriptionPlanIds", "title price durationWeeks")
+    .populate({
+      path: "weeklySchedule.workouts.exercises.exerciseId",
+      select: "name category muscleGroups animationUrl thumbnailUrl difficulty",
+    });
 
   if (!plan) {
     res.status(404);
@@ -465,7 +470,10 @@ export const createFromTemplate = asyncHandler(async (req, res) => {
         {
           name: day.dayName || "Workout",
           estimatedDuration: day.estimatedDuration,
-          exercises: day.exercises,
+          exercises: day.exercises.map((ex) => ({
+            ...ex,
+            exerciseId: ex.exerciseId.toString(), // Convert ObjectId to string
+          })),
         },
       ],
     })),

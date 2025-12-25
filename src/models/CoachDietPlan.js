@@ -442,7 +442,7 @@ coachDietPlanSchema.methods.getMealsForDay = function (dayOfWeek) {
 // Virtual field to get today's meals (for convenience)
 coachDietPlanSchema.virtual('todaysMeals').get(function() {
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const dayOfWeek = today.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
   return this.getMealsForDay(dayOfWeek);
 });
 

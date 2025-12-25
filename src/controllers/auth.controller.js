@@ -95,7 +95,13 @@ const registerSchema = Joi.object({
   coachId: Joi.when("role", {
     is: "client",
     then: Joi.string().required().label("Coach Referral Code"),
-    otherwise: Joi.string().optional(),
+    otherwise: Joi.string().optional().allow(""), // Allow optional referral code for coaches
+  }),
+  // Coach referral code - used by coaches to refer other coaches
+  coachReferralCode: Joi.when("role", {
+    is: "coach",
+    then: Joi.string().optional().allow("").label("Coach Referral Code"),
+    otherwise: Joi.forbidden(),
   }),
   companyName: Joi.when("role", {
     is: "coach",
@@ -153,6 +159,7 @@ export const registerUser = asyncHandler(async (req, res) => {
     password,
     role,
     coachId, // this will be the referralCode for clients
+    coachReferralCode, // for coach-to-coach referrals
     companyName,
     phone,
     whatsappNumber,
@@ -182,7 +189,21 @@ export const registerUser = asyncHandler(async (req, res) => {
     assignedCoach = coach._id;
   }
 
-  // 3️⃣ Generate OTP and hash
+  // 3️⃣ If coach and has referral code, find the referring coach
+  let referredByCoach = null;
+  if (role === "coach" && coachReferralCode && coachReferralCode.trim()) {
+    const referringCoach = await User.findOne({
+      referralCode: coachReferralCode.trim(),
+      role: "coach",
+    });
+    if (!referringCoach) {
+      res.status(400);
+      throw new Error("Invalid referral code. Please check and try again.");
+    }
+    referredByCoach = referringCoach._id;
+  }
+
+  // 4️⃣ Generate OTP and hash
   const otp = generateNumericOtp(6);
   const otpHash = hashOtp(otp);
   const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -213,6 +234,10 @@ export const registerUser = asyncHandler(async (req, res) => {
       const trialEndsAt = new Date(Date.now() + 28 * 24 * 60 * 60 * 1000); // 28 days from now
       userData.platformSubscriptionStatus = "trial";
       userData.trialEndsAt = trialEndsAt;
+      // Store the referring coach ID for referral rewards
+      if (referredByCoach) {
+        userData.referredByCoachId = referredByCoach;
+      }
     }
 
     user = await User.create(userData);
@@ -230,6 +255,27 @@ export const registerUser = asyncHandler(async (req, res) => {
     // Update existing unverified user with new data & OTP
     existingUser.emailVerificationOtpHash = otpHash;
     existingUser.emailVerificationOtpExpire = otpExpire;
+
+    // Keep role-specific fields in sync for unverified accounts
+    existingUser.fullName = fullName ?? existingUser.fullName;
+    existingUser.phone = phone ?? existingUser.phone;
+    existingUser.whatsappNumber = whatsappNumber ?? existingUser.whatsappNumber;
+    existingUser.role = role ?? existingUser.role;
+
+    if (role === "client") {
+      // Assign coach by referral code
+      existingUser.coachId = assignedCoach ?? existingUser.coachId;
+      existingUser.coachCode = coachId ?? existingUser.coachCode;
+    }
+
+    if (role === "coach") {
+      existingUser.companyName = companyName ?? existingUser.companyName;
+      // Preserve referral relationship for reward logic
+      if (referredByCoach) {
+        existingUser.referredByCoachId = referredByCoach;
+      }
+    }
+
     user = await existingUser.save();
   }
 

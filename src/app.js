@@ -112,6 +112,7 @@ import contactRequestRoutes from "./routes/contactRequest.routes.js";
 import contactUsRoutes from "./routes/contactUs.routes.js";
 import bugReportRoutes from "./routes/bugReport.routes.js";
 import feedbackRoutes from "./routes/feedback.routes.js";
+import coachReviewRoutes from "./routes/coachReview.routes.js";
 import waterIntakeRoutes from "./routes/waterIntake.routes.js";
 import platformSubscriptionRoutes from "./routes/platformSubscription.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
@@ -150,6 +151,7 @@ app.use("/api/v1/contact-requests", contactRequestRoutes);
 app.use("/api/v1/contact-us", contactUsRoutes);
 app.use("/api/v1/bug-reports", bugReportRoutes);
 app.use("/api/v1/feedback", feedbackRoutes);
+app.use("/api/v1/coach-reviews", coachReviewRoutes);
 app.use("/api/v1/chat", chatRoutes);
 app.use("/api/v1/documents", documentsRoutes);
 

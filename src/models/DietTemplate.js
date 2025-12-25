@@ -169,8 +169,41 @@ const dietTemplateSchema = new mongoose.Schema(
       min: 1,
       max: 8,
     },
-    // Sample daily meals
+    // Sample daily meals (for single day template)
     sampleMeals: [templateMealSchema],
+    // Weekly diet schedule (for day-wise template)
+    weeklySchedule: [
+      {
+        dayOfWeek: {
+          type: Number,
+          min: 0,
+          max: 6,
+        },
+        dayNumber: {
+          type: Number,
+          min: 1,
+          max: 7,
+        },
+        dayName: {
+          type: String,
+          trim: true,
+          maxlength: 100,
+        },
+        meals: [templateMealSchema],
+        notes: {
+          type: String,
+          trim: true,
+          maxlength: 500,
+        },
+      },
+    ],
+    // Days per week
+    daysPerWeek: {
+      type: Number,
+      default: 7,
+      min: 1,
+      max: 7,
+    },
     // Dietary restrictions
     dietaryType: {
       type: String,

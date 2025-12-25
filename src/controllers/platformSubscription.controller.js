@@ -7,6 +7,7 @@ import streamifier from "streamifier";
 
 const PLATFORM_FEE = 99; // ₹99 per month
 const SUBSCRIPTION_DURATION_DAYS = 30; // 30 days per payment
+const REFERRAL_REWARD_DAYS = 10; // Days to extend inviter's subscription on successful referral
 
 // ------------------------------
 // @desc Get subscription status
@@ -319,6 +320,82 @@ export const approveOrRejectPayment = asyncHandler(async (req, res) => {
       platformSubscriptionStatus: "active",
       subscriptionExpiresAt: validUntil,
     });
+
+    // 🎁 Handle coach referral reward - Check if this is the first approved payment
+    // and if the coach was referred by another coach
+    const approvedPaymentsCount = subscription.paymentHistory.filter(p => p.status === "approved").length;
+    
+    if (approvedPaymentsCount === 1) {
+      // This is the first approved payment - check for referral reward
+      const referredCoach = await User.findById(subscription.userId).select("referredByCoachId referralRewardGiven");
+      
+      if (referredCoach?.referredByCoachId && !referredCoach.referralRewardGiven) {
+        // Find the inviter's subscription and extend it
+        const inviterSubscription = await PlatformSubscription.findOne({ userId: referredCoach.referredByCoachId });
+        
+        if (inviterSubscription) {
+          // Calculate new expiry date for inviter
+          const inviterCurrentExpiry = inviterSubscription.status === "trial" 
+            ? inviterSubscription.trialEndsAt 
+            : inviterSubscription.subscriptionExpiresAt;
+          
+          const baseDate = inviterCurrentExpiry && inviterCurrentExpiry > now ? inviterCurrentExpiry : now;
+          const newExpiryDate = new Date(baseDate.getTime() + REFERRAL_REWARD_DAYS * 24 * 60 * 60 * 1000);
+          
+          // Update based on inviter's subscription status
+          if (inviterSubscription.status === "trial") {
+            inviterSubscription.trialEndsAt = newExpiryDate;
+            await User.findByIdAndUpdate(referredCoach.referredByCoachId, {
+              trialEndsAt: newExpiryDate,
+            });
+          } else {
+            inviterSubscription.subscriptionExpiresAt = newExpiryDate;
+            // If inviter was expired, reactivate them
+            if (inviterSubscription.status === "expired") {
+              inviterSubscription.status = "active";
+            }
+            await User.findByIdAndUpdate(referredCoach.referredByCoachId, {
+              platformSubscriptionStatus: inviterSubscription.status,
+              subscriptionExpiresAt: newExpiryDate,
+            });
+          }
+          
+          // Add a note to inviter's payment history
+          const referredCoachName = (await User.findById(subscription.userId).select("fullName"))?.fullName || "A coach";
+          inviterSubscription.paymentHistory.push({
+            amount: 0,
+            transactionId: `REFERRAL-REWARD-${Date.now()}`,
+            status: "approved",
+            approvedBy: req.user._id,
+            approvedAt: now,
+            validFrom: baseDate,
+            validUntil: newExpiryDate,
+            notes: `Referral reward: ${REFERRAL_REWARD_DAYS} days added for referring ${referredCoachName}`,
+          });
+          
+          await inviterSubscription.save();
+          
+          // Mark referral reward as given
+          await User.findByIdAndUpdate(subscription.userId, {
+            referralRewardGiven: true,
+          });
+          
+          // Send notification to inviter about the referral reward
+          try {
+            const { createNotification } = await import("./notifications.controller.js");
+            await createNotification({
+              userId: referredCoach.referredByCoachId,
+              title: "Referral Reward Received! 🎉",
+              message: `Congratulations! Your referral ${referredCoachName} has subscribed. You've received ${REFERRAL_REWARD_DAYS} extra days!`,
+              type: "referral_reward",
+            });
+          } catch (notifError) {
+            console.error("Failed to send referral reward notification:", notifError);
+            // Don't fail the main operation
+          }
+        }
+      }
+    }
 
   } else if (action === "reject") {
     payment.status = "rejected";

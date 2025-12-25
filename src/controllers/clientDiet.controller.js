@@ -261,7 +261,7 @@ export const getClientDietPlans = asyncHandler(async (req, res) => {
 
   // Add today's meals to each plan
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const dayOfWeek = today.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
   
   const plansWithTodaysMeals = dietPlans.map(plan => {
     const planObj = plan.toObject();

@@ -8,6 +8,7 @@ import {
   getPublicCoachProfile,
   getPublicCoachProgress,
   getCoachEarnings,
+  getCoachReferrals,
 } from "../controllers/coach.controller.js";
 
 import { getClientById } from "../controllers/users.controller.js";
@@ -24,6 +25,7 @@ router.use(protect, authorizeRoles("coach"), checkCoachSubscription);
 router.get("/stats", getCoachStats);
 router.get("/client-progress", getCoachProgressTrend);
 router.get("/earnings", getCoachEarnings);
+router.get("/referrals", getCoachReferrals);
 router.get("/clients", getCoachClients);
 router.get("/clients/:id", getClientById);
 

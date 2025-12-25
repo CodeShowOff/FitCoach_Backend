@@ -96,7 +96,7 @@ async function generateWorkoutLogs(clientId, coachId, workoutPlan, subscription,
   weekStartDate.setHours(0, 0, 0, 0);
 
   while (current <= end) {
-    const dayOfWeek = current.getDay();
+    const dayOfWeek = current.getUTCDay();
     
     // Calculate week number
     const daysSinceStart = Math.floor((current - weekStartDate) / (1000 * 60 * 60 * 24));
@@ -217,12 +217,25 @@ export const getAssignedWorkoutPlan = asyncHandler(async (req, res) => {
 // @access Private (Client only)
 // ------------------------------
 export const getTodaysWorkout = asyncHandler(async (req, res) => {
-  const { subscription, workoutPlan } = await getClientWorkoutPlan(req.user._id);
+  const { subscription, plan } = await getClientWorkoutPlan(req.user._id);
 
-  if (!subscription || !workoutPlan) {
+  if (!subscription || !plan || !plan.workoutPlanIds || plan.workoutPlanIds.length === 0) {
     return res.json({
       success: true,
-      data: null,
+      data: [],
+      message: "No workout scheduled for today",
+    });
+  }
+
+  const workoutPlans = await CoachWorkoutPlan.find({
+    _id: { $in: plan.workoutPlanIds },
+    isActive: true,
+  });
+
+  if (!workoutPlans || workoutPlans.length === 0) {
+    return res.json({
+      success: true,
+      data: [],
       message: "No workout scheduled for today",
     });
   }
@@ -232,141 +245,137 @@ export const getTodaysWorkout = asyncHandler(async (req, res) => {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  // Get workout details from plan based on today's day of week
-  const dayOfWeek = today.getDay();
-  const scheduleDay = workoutPlan.weeklySchedule.find(
-    (day) => day.dayOfWeek === dayOfWeek || day.dayNumber === dayOfWeek + 1
-  );
+  const dayOfWeek = today.getUTCDay();
 
-  if (!scheduleDay) {
-    return res.json({
-      success: true,
-      data: null,
-      message: "No workout scheduled for today",
+  const results = [];
+
+  for (const workoutPlan of workoutPlans) {
+    const scheduleDay = workoutPlan.weeklySchedule?.find(
+      (day) => day.dayOfWeek === dayOfWeek || day.dayNumber === dayOfWeek + 1
+    );
+
+    // If a plan doesn't have a schedule for today, skip it.
+    if (!scheduleDay) {
+      continue;
+    }
+
+    await generateWorkoutLogs(
+      req.user._id,
+      subscription.coachId,
+      workoutPlan,
+      subscription,
+      today,
+      today
+    );
+
+    let todayLog = await ClientWorkoutLog.findOne({
+      clientId: req.user._id,
+      workoutPlanId: workoutPlan._id,
+      scheduledDate: { $gte: today, $lt: tomorrow },
     });
-  }
 
-  // Generate logs if needed
-  await generateWorkoutLogs(
-    req.user._id,
-    subscription.coachId,
-    workoutPlan,
-    subscription,
-    today,
-    today
-  );
+    if (!todayLog) {
+      const exerciseLogs = [];
+      if (!scheduleDay.isRestDay && scheduleDay.workouts) {
+        for (const workout of scheduleDay.workouts) {
+          if (workout.exercises) {
+            for (const ex of workout.exercises) {
+              exerciseLogs.push({
+                exerciseId: ex.exerciseId,
+                exerciseName: ex.exerciseName,
+                plannedSets: ex.sets,
+                plannedReps: ex.reps,
+                plannedDuration: ex.duration,
+                completedSets: 0,
+                completed: false,
+              });
+            }
+          }
+        }
+      }
 
-  // Get today's log (query again after generating)
-  let todayLog = await ClientWorkoutLog.findOne({
-    clientId: req.user._id,
-    workoutPlanId: workoutPlan._id,
-    scheduledDate: { $gte: today, $lt: tomorrow },
-  });
+      todayLog = await ClientWorkoutLog.create({
+        clientId: req.user._id,
+        coachId: subscription.coachId,
+        workoutPlanId: workoutPlan._id,
+        subscriptionId: subscription._id,
+        scheduledDate: today,
+        dayOfWeek,
+        dayNumber: scheduleDay.dayNumber || dayOfWeek + 1,
+        weekNumber: 1,
+        workoutName: scheduleDay.dayName || `Day ${dayOfWeek + 1}`,
+        focusArea: scheduleDay.focusArea,
+        status: scheduleDay.isRestDay ? "rest_day" : "scheduled",
+        exerciseLogs,
+      });
+    }
 
-  // If still no log, create one on the fly
-  if (!todayLog && scheduleDay) {
-    const exerciseLogs = [];
-    if (!scheduleDay.isRestDay && scheduleDay.workouts) {
+    let exercises = [];
+    if (scheduleDay.workouts && scheduleDay.workouts.length > 0) {
       for (const workout of scheduleDay.workouts) {
-        if (workout.exercises) {
+        if (workout.exercises && workout.exercises.length > 0) {
           for (const ex of workout.exercises) {
-            exerciseLogs.push({
+            exercises.push({
+              _id: ex._id,
               exerciseId: ex.exerciseId,
               exerciseName: ex.exerciseName,
-              plannedSets: ex.sets,
-              plannedReps: ex.reps,
-              plannedDuration: ex.duration,
-              completedSets: 0,
-              completed: false,
+              sets: ex.sets,
+              reps: ex.reps,
+              duration: ex.duration,
+              restSeconds: ex.restSeconds,
+              weight: ex.weight,
+              notes: ex.notes,
+              order: ex.order,
             });
           }
         }
       }
     }
 
-    todayLog = await ClientWorkoutLog.create({
-      clientId: req.user._id,
-      coachId: subscription.coachId,
-      workoutPlanId: workoutPlan._id,
-      subscriptionId: subscription._id,
-      scheduledDate: today,
-      dayOfWeek,
-      dayNumber: scheduleDay.dayNumber || dayOfWeek + 1,
-      weekNumber: 1,
-      workoutName: scheduleDay.dayName || `Day ${dayOfWeek + 1}`,
-      focusArea: scheduleDay.focusArea,
-      status: scheduleDay.isRestDay ? "rest_day" : "scheduled",
-      exerciseLogs,
-    });
-  }
+    if (exercises.length > 0) {
+      const exerciseIds = exercises
+        .filter((e) => e.exerciseId)
+        .map((e) => e.exerciseId);
 
-  // Collect all exercises from all workout sessions for this day
-  let exercises = [];
-  if (scheduleDay.workouts && scheduleDay.workouts.length > 0) {
-    for (const workout of scheduleDay.workouts) {
-      if (workout.exercises && workout.exercises.length > 0) {
-        // Populate exercise details
-        for (const ex of workout.exercises) {
-          exercises.push({
-            _id: ex._id,
-            exerciseId: ex.exerciseId,
-            exerciseName: ex.exerciseName,
-            sets: ex.sets,
-            reps: ex.reps,
-            duration: ex.duration,
-            restSeconds: ex.restSeconds,
-            weight: ex.weight,
-            notes: ex.notes,
-            order: ex.order,
-          });
-        }
-      }
+      const exerciseDetails = await import("../models/Exercise.js").then((m) =>
+        m.default
+          .find({ _id: { $in: exerciseIds } })
+          .select("name animationUrl thumbnailUrl muscleGroups equipment difficulty instructions tips")
+      );
+
+      const exerciseMap = new Map(exerciseDetails.map((e) => [e._id.toString(), e]));
+
+      exercises = exercises.map((ex) => {
+        const details = ex.exerciseId ? exerciseMap.get(ex.exerciseId.toString()) : null;
+        return {
+          ...ex,
+          exerciseId: details || ex.exerciseId,
+          name: details?.name || ex.exerciseName,
+        };
+      });
     }
-  }
 
-  // Populate exercise details if we have exerciseIds
-  if (exercises.length > 0) {
-    const exerciseIds = exercises
-      .filter((e) => e.exerciseId)
-      .map((e) => e.exerciseId);
-    
-    const exerciseDetails = await import("../models/Exercise.js").then(
-      (m) => m.default.find({ _id: { $in: exerciseIds } })
-        .select("name animationUrl thumbnailUrl muscleGroups equipment difficulty instructions tips")
-    );
-    
-    const exerciseMap = new Map(
-      exerciseDetails.map((e) => [e._id.toString(), e])
-    );
-    
-    exercises = exercises.map((ex) => {
-      const details = ex.exerciseId ? exerciseMap.get(ex.exerciseId.toString()) : null;
-      return {
-        ...ex,
-        exerciseId: details || ex.exerciseId,
-        name: details?.name || ex.exerciseName,
-      };
-    });
-  }
-
-  res.json({
-    success: true,
-    data: {
+    results.push({
       _id: todayLog?._id,
       planId: workoutPlan._id,
       planName: workoutPlan.name,
       workoutPlanId: workoutPlan._id,
       workoutPlanName: workoutPlan.name,
-      dayOfWeek: dayOfWeek,
+      dayOfWeek,
       focus: scheduleDay.focusArea || scheduleDay.dayName,
       dayName: scheduleDay.dayName,
       isRestDay: scheduleDay.isRestDay || false,
       restDayNotes: scheduleDay.restDayNotes,
-      exercises: exercises,
+      exercises,
       completed: todayLog?.status === "completed",
       status: todayLog?.status || "scheduled",
       log: todayLog,
-    },
+    });
+  }
+
+  res.json({
+    success: true,
+    data: results,
   });
 });
 
@@ -388,10 +397,10 @@ export const getWeeklySchedule = asyncHandler(async (req, res) => {
 
   // Get start of current week (Monday)
   const today = new Date();
-  const dayOfWeek = today.getDay();
+  const dayOfWeek = today.getUTCDay();
   const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  startOfWeek.setHours(0, 0, 0, 0);
+  startOfWeek.setUTCDate(today.getUTCDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  startOfWeek.setUTCHours(0, 0, 0, 0);
 
   const endOfWeek = new Date(startOfWeek);
   endOfWeek.setDate(startOfWeek.getDate() + 6);

@@ -4,6 +4,7 @@ import Plan from "../models/Plan.js";
 import Product from "../models/Product.js";
 import Subscription from "../models/Subscription.js";
 import Order from "../models/Order.js";
+import CoachReview from "../models/CoachReview.js";
 import { getPlanSummariesForClients } from "../services/planSummary.service.js";
 
 // ------------------------------
@@ -193,7 +194,7 @@ export const getPublicCoachProfile = asyncHandler(async (req, res) => {
 
   const coachId = coach._id;
 
-  const [clientsCount, plansCount, productsCount, publicPlans] = await Promise.all([
+  const [clientsCount, plansCount, productsCount, publicPlans, approvedReviews] = await Promise.all([
     User.countDocuments({ coachId, role: "client" }),
     Plan.countDocuments({ coachId }),
     Product.countDocuments({ coachId }),
@@ -202,7 +203,18 @@ export const getPublicCoachProfile = asyncHandler(async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(10)
       .lean(),
+    CoachReview.find({ coach: coachId, isApproved: true })
+      .populate("client", "fullName avatarUrl")
+      .sort({ createdAt: -1 })
+      .limit(4)
+      .lean(),
   ]);
+
+  // Calculate average rating from approved reviews
+  const totalApprovedReviews = await CoachReview.countDocuments({ coach: coachId, isApproved: true });
+  const averageRating = approvedReviews.length > 0
+    ? approvedReviews.reduce((sum, r) => sum + r.rating, 0) / approvedReviews.length
+    : 0;
 
   // Fetch recent progress from clients' history arrays
   const recentClients = await User.find({ coachId, role: "client" })
@@ -295,8 +307,11 @@ export const getPublicCoachProfile = asyncHandler(async (req, res) => {
         clientsCount,
         plansCount,
         productsCount,
+        averageRating: Math.round(averageRating * 10) / 10,
+        totalReviews: totalApprovedReviews,
       },
       plans: publicPlans,
+      reviews: approvedReviews,
       latestProgress,
     },
   });
@@ -478,3 +493,54 @@ export const getCoachEarnings = asyncHandler(async (req, res) => {
   });
 });
 
+// ------------------------------
+// 🎁 @desc Get coach referral stats
+// @route GET /api/v1/coach/referrals
+// @access Private (coach only)
+// ------------------------------
+export const getCoachReferrals = asyncHandler(async (req, res) => {
+  const coachId = req.user._id;
+
+  // Get the current coach's referral code
+  const coach = await User.findById(coachId).select("referralCode");
+  
+  if (!coach) {
+    res.status(404);
+    throw new Error("Coach not found");
+  }
+
+  // Find all coaches referred by this coach
+  const referredCoaches = await User.find({
+    referredByCoachId: coachId,
+    role: "coach",
+  })
+    .select("fullName email createdAt referralRewardGiven platformSubscriptionStatus")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  // Calculate stats
+  const totalReferred = referredCoaches.length;
+  const successfulReferrals = referredCoaches.filter(c => c.referralRewardGiven).length;
+  const pendingReferrals = referredCoaches.filter(c => !c.referralRewardGiven).length;
+  const totalDaysEarned = successfulReferrals * 10; // 10 days per successful referral
+
+  res.json({
+    success: true,
+    data: {
+      referralCode: coach.referralCode,
+      stats: {
+        totalReferred,
+        successfulReferrals,
+        pendingReferrals,
+        totalDaysEarned,
+      },
+      referredCoaches: referredCoaches.map(c => ({
+        fullName: c.fullName,
+        email: c.email,
+        joinedAt: c.createdAt,
+        status: c.referralRewardGiven ? "subscribed" : "pending",
+        subscriptionStatus: c.platformSubscriptionStatus,
+      })),
+    },
+  });
+});

@@ -66,6 +66,14 @@ const mealSchema = Joi.object({
   notes: Joi.string().max(500).optional().allow("", null),
 });
 
+const dietDaySchema = Joi.object({
+  dayOfWeek: Joi.number().min(0).max(6).optional(),
+  dayNumber: Joi.number().min(1).max(7).optional(),
+  dayName: Joi.string().max(100).optional().allow("", null),
+  meals: Joi.array().items(mealSchema).optional(),
+  notes: Joi.string().max(500).optional().allow("", null),
+});
+
 const dailyTargetsSchema = Joi.object({
   calories: Joi.number().min(500).max(10000).optional(),
   protein: Joi.number().min(0).max(500).optional(),
@@ -84,6 +92,8 @@ const createTemplateSchema = Joi.object({
   dailyTargets: dailyTargetsSchema.optional(),
   mealsPerDay: Joi.number().min(1).max(8).default(4),
   sampleMeals: Joi.array().items(mealSchema).optional(),
+  weeklySchedule: Joi.array().items(dietDaySchema).optional(),
+  daysPerWeek: Joi.number().min(1).max(7).default(7),
   dietaryType: Joi.string()
     .valid(...dietaryTypeEnum)
     .default("any"),
@@ -108,6 +118,8 @@ const updateTemplateSchema = Joi.object({
   dailyTargets: dailyTargetsSchema.optional(),
   mealsPerDay: Joi.number().min(1).max(8).optional(),
   sampleMeals: Joi.array().items(mealSchema).optional(),
+  weeklySchedule: Joi.array().items(dietDaySchema).optional(),
+  daysPerWeek: Joi.number().min(1).max(7).optional(),
   dietaryType: Joi.string()
     .valid(...dietaryTypeEnum)
     .optional(),
@@ -166,7 +178,7 @@ export const createDietTemplate = asyncHandler(async (req, res) => {
 
   // Validate food items
   try {
-    await validateFoodItems(value.sampleMeals);
+    await validateFoodItems(value.sampleMeals, value.weeklySchedule);
   } catch (err) {
     res.status(400);
     throw err;
@@ -220,7 +232,7 @@ export const getDietTemplates = asyncHandler(async (req, res) => {
 
   const [templates, total] = await Promise.all([
     DietTemplate.find(query)
-      .select("-sampleMeals")
+      .select("-sampleMeals -weeklySchedule")
       .skip(skip)
       .limit(limit)
       .sort({ isFeatured: -1, usageCount: -1, createdAt: -1 }),
@@ -252,6 +264,8 @@ export const getDietTemplateById = asyncHandler(async (req, res) => {
   }
 
   const template = await DietTemplate.findOne(query)
+    .populate("weeklySchedule.meals.foods.foodItemId", "name nutrition servingSize servingUnit category")
+    .populate("weeklySchedule.meals.alternatives", "name nutrition servingSize servingUnit category")
     .populate("sampleMeals.foods.foodItemId", "name nutrition servingSize servingUnit")
     .populate("sampleMeals.alternatives", "name nutrition servingSize servingUnit")
     .populate("recommendedFoods", "name nutrition servingSize servingUnit");
@@ -279,10 +293,10 @@ export const updateDietTemplate = asyncHandler(async (req, res) => {
     throw new Error(error.details[0].message);
   }
 
-  // Validate food items if sampleMeals is being updated
-  if (value.sampleMeals) {
+  // Validate food items if sampleMeals or weeklySchedule is being updated
+  if (value.sampleMeals || value.weeklySchedule) {
     try {
-      await validateFoodItems(value.sampleMeals);
+      await validateFoodItems(value.sampleMeals, value.weeklySchedule);
     } catch (err) {
       res.status(400);
       throw err;
