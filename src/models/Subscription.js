@@ -63,6 +63,19 @@ const subscriptionSchema = new mongoose.Schema(
       trim: true,
       maxlength: 500,
     },
+    // Auto-assigned workout and diet plans when subscription is approved
+    assignedWorkoutPlanIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "CoachWorkoutPlan",
+      },
+    ],
+    assignedDietPlanIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "CoachDietPlan",
+      },
+    ],
   },
   { timestamps: true }
 );

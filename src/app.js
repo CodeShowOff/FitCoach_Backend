@@ -115,6 +115,17 @@ import feedbackRoutes from "./routes/feedback.routes.js";
 import waterIntakeRoutes from "./routes/waterIntake.routes.js";
 import platformSubscriptionRoutes from "./routes/platformSubscription.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
+import documentsRoutes from "./routes/documents.routes.js";
+
+// Workout & Diet Planning Routes
+import exerciseRoutes from "./routes/exercise.routes.js";
+import workoutTemplateRoutes from "./routes/workoutTemplate.routes.js";
+import coachWorkoutPlanRoutes from "./routes/coachWorkoutPlan.routes.js";
+import clientWorkoutRoutes from "./routes/clientWorkout.routes.js";
+import foodItemRoutes from "./routes/foodItem.routes.js";
+import dietTemplateRoutes from "./routes/dietTemplate.routes.js";
+import coachDietPlanRoutes from "./routes/coachDietPlan.routes.js";
+import clientDietRoutes from "./routes/clientDiet.routes.js";
 
 
 // ------------------------------
@@ -140,6 +151,19 @@ app.use("/api/v1/contact-us", contactUsRoutes);
 app.use("/api/v1/bug-reports", bugReportRoutes);
 app.use("/api/v1/feedback", feedbackRoutes);
 app.use("/api/v1/chat", chatRoutes);
+app.use("/api/v1/documents", documentsRoutes);
+
+// Workout Planning Routes
+app.use("/api/v1/exercises", exerciseRoutes);
+app.use("/api/v1/workout-templates", workoutTemplateRoutes);
+app.use("/api/v1/coach/workout-plans", coachWorkoutPlanRoutes);
+app.use("/api/v1/client/workouts", clientWorkoutRoutes);
+
+// Diet Planning Routes
+app.use("/api/v1/food-items", foodItemRoutes);
+app.use("/api/v1/diet-templates", dietTemplateRoutes);
+app.use("/api/v1/coach/diet-plans", coachDietPlanRoutes);
+app.use("/api/v1/client/diet", clientDietRoutes);
 
 // ------------------------------
 // ❌ 404 Handler (Express 5)

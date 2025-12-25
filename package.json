@@ -12,6 +12,9 @@
     "dev": "node --watch src/server.js",
     "create-indexes": "node src/scripts/CreateIndexes.js",
     "create-admin": "node src/scripts/CreateAdmin.js",
+    "seed:exercises": "node src/scripts/seedExercises.js",
+    "seed:food": "node src/scripts/seedFoodItems.js",
+    "seed:all": "node src/scripts/seedExercises.js && node src/scripts/seedFoodItems.js",
     "expire-subscriptions": "node src/jobs/subscriptions.job.js",
     "lint": "eslint . --ext .js",
     "test": "echo \"No tests specified\" && exit 0"

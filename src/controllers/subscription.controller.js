@@ -6,6 +6,8 @@ import Plan from "../models/Plan.js";
 import User from "../models/User.js";
 import { getPlanSummariesForClients } from "../services/planSummary.service.js";
 import { onSubscriptionApproved, onSubscriptionEnded } from "../services/chat.service.js";
+import CoachWorkoutPlan from "../models/CoachWorkoutPlan.js";
+import CoachDietPlan from "../models/CoachDietPlan.js";
 
 // ------------------------------
 // 🧩 Validation Schemas
@@ -298,6 +300,19 @@ export const updateSubscriptionStatus = asyncHandler(async (req, res) => {
       planId: subscription.planId,
       planTitle: subscription.planTitle,
     }).catch((err) => console.error("Failed to add to plan group:", err));
+
+    // Auto-assign workout and diet plans linked to this subscription plan
+    const subscriptionPlan = await Plan.findById(subscription.planId);
+    if (subscriptionPlan) {
+      // Store workout plan IDs on subscription for quick access
+      if (subscriptionPlan.workoutPlanIds && subscriptionPlan.workoutPlanIds.length > 0) {
+        subscription.assignedWorkoutPlanIds = subscriptionPlan.workoutPlanIds;
+      }
+      // Store diet plan IDs on subscription for quick access
+      if (subscriptionPlan.dietPlanIds && subscriptionPlan.dietPlanIds.length > 0) {
+        subscription.assignedDietPlanIds = subscriptionPlan.dietPlanIds;
+      }
+    }
   }
 
   await subscription.save();

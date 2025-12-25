@@ -54,6 +54,39 @@ const planSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+    // Linked workout plans
+    workoutPlanIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "CoachWorkoutPlan",
+      },
+    ],
+    // Linked diet plans
+    dietPlanIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "CoachDietPlan",
+      },
+    ],
+    // Features included in this plan
+    features: {
+      hasWorkoutPlan: {
+        type: Boolean,
+        default: false,
+      },
+      hasDietPlan: {
+        type: Boolean,
+        default: false,
+      },
+      hasProgressTracking: {
+        type: Boolean,
+        default: true,
+      },
+      hasChat: {
+        type: Boolean,
+        default: true,
+      },
+    },
   },
   {
     timestamps: true,
