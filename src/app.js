@@ -86,6 +86,15 @@ app.get("/api/v1/health", (req, res) => {
     message: "Backend API is up and running!",
   });
 });
+// Root health endpoint for external monitors
+// (kept outside /api so it is never affected by /api-specific middleware).
+app.get("/health", (_req, res) => {
+  res.status(200).type("text/plain").send("ok");
+});
+
+app.head("/health", (_req, res) => {
+  res.status(200).end();
+});
 
 // ------------------------------
 // ⚙️ Rate Limiter

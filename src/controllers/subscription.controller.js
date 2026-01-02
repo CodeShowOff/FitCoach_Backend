@@ -6,8 +6,6 @@ import Plan from "../models/Plan.js";
 import User from "../models/User.js";
 import { getPlanSummariesForClients } from "../services/planSummary.service.js";
 import { onSubscriptionApproved, onSubscriptionEnded } from "../services/chat.service.js";
-import CoachWorkoutPlan from "../models/CoachWorkoutPlan.js";
-import CoachDietPlan from "../models/CoachDietPlan.js";
 
 // ------------------------------
 // 🧩 Validation Schemas

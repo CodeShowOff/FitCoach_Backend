@@ -64,6 +64,17 @@ const REFRESH_TOKEN_TTL_MS = parseDurationToMs(
 
 const refreshExpiryDate = () => new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
 
+const clearRefreshCookie = (res) => {
+  const secure = process.env.NODE_ENV === "production";
+  const sameSite = secure ? "none" : "lax";
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    secure,
+    sameSite,
+    path: "/",
+  });
+};
+
 // ------------------------------
 // 🔢 OTP helpers
 // ------------------------------
@@ -731,31 +742,39 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
   const refreshToken = req.cookies?.refreshToken;
 
   if (!refreshToken) {
+    clearRefreshCookie(res);
     res.status(401);
     throw new Error("Not authenticated. Please log in to continue.");
   }
 
-  // Check token existence in DB
-  const storedToken = await Token.findOne({ token: refreshToken });
-  if (!storedToken) {
-    res.status(403);
-    throw new Error("Invalid or revoked refresh token");
-  }
-
-  // Verify signature first before any DB operations
+  // Verify signature first (cheap) before DB work
   let decoded;
   try {
     decoded = verifyRefreshToken(refreshToken);
   } catch {
     await Token.deleteOne({ token: refreshToken }); // cleanup
+    clearRefreshCookie(res);
     res.status(403);
     throw new Error("Invalid or expired refresh token");
+  }
+
+  // Check token existence in DB (revocation / rotation tracking)
+  const storedToken = await Token.findOne({ token: refreshToken });
+  if (!storedToken) {
+    // IMPORTANT: do not clear the cookie here.
+    // In a multi-tab scenario, another tab may have just rotated the cookie,
+    // and this in-flight request could otherwise clear the new cookie.
+    res.status(403);
+    const error = new Error("Refresh token not found. Please retry.");
+    error.code = "TOKEN_NOT_FOUND";
+    throw error;
   }
 
   // Fetch user to ensure account is valid and get current role
   const user = await User.findById(decoded.id);
   if (!user) {
     await Token.deleteOne({ token: refreshToken });
+    clearRefreshCookie(res);
     res.status(401);
     throw new Error("User no longer exists");
   }
@@ -763,6 +782,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
   // Check if user's email is verified
   if (!user.emailVerified) {
     await Token.deleteOne({ token: refreshToken });
+    clearRefreshCookie(res);
     res.status(403);
     throw new Error("Email verification required");
   }
@@ -770,6 +790,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
   // Check if user's account is active
   if (user.isActive === false) {
     await Token.deleteOne({ token: refreshToken });
+    clearRefreshCookie(res);
     res.status(403);
     const error = new Error("Account is deactivated. Please contact the administrator.");
     error.code = "ACCOUNT_DEACTIVATED";
@@ -791,7 +812,9 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
 
   if (!updateResult) {
     res.status(403);
-    throw new Error("Token was already refreshed. Please try again.");
+    const error = new Error("Token was already refreshed. Please try again.");
+    error.code = "TOKEN_ALREADY_REFRESHED";
+    throw error;
   }
 
   // Send new refresh token cookie

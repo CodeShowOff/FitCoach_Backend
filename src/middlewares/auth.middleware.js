@@ -21,29 +21,36 @@ export const protect = asyncHandler(async (req, res, next) => {
     throw new Error("Not authorized, token missing");
   }
 
+  // 1) Verify access token (only this step should be caught as 401)
+  let decoded;
   try {
-    const decoded = verifyAccessToken(token);
-    req.user = await User.findById(decoded.id).select("-password");
-    if (!req.user) {
-      res.status(401);
-      throw new Error("Not authorized, user not found");
-    }
-    if (!req.user.emailVerified) {
-      res.status(403);
-      throw new Error("Please verify your email to access this resource.");
-    }
-    if (req.user.isActive === false) {
-      res.status(403);
-      const error = new Error("Account is deactivated. Please contact the administrator.");
-      error.code = "ACCOUNT_DEACTIVATED";
-      throw error;
-    }
-    next();
+    decoded = verifyAccessToken(token);
   } catch (err) {
-    console.error("JWT verification failed:", err.message);
+    console.error("JWT verification failed:", err?.message || err);
     res.status(401);
     throw new Error("Not authorized, token invalid or expired");
   }
+
+  // 2) Load user and apply account-level checks (preserve 403s)
+  req.user = await User.findById(decoded.id).select("-password");
+  if (!req.user) {
+    res.status(401);
+    throw new Error("Not authorized, user not found");
+  }
+
+  if (!req.user.emailVerified) {
+    res.status(403);
+    throw new Error("Please verify your email to access this resource.");
+  }
+
+  if (req.user.isActive === false) {
+    res.status(403);
+    const error = new Error("Account is deactivated. Please contact the administrator.");
+    error.code = "ACCOUNT_DEACTIVATED";
+    throw error;
+  }
+
+  next();
 });
 
 /**

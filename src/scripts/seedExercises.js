@@ -22,14 +22,6 @@ import Exercise from "../models/Exercise.js";
 
 dotenv.config();
 
-// Example placeholder animation URLs - replace with your own in production
-// These use placeholder URLs that should be replaced with actual hosted animations
-const PLACEHOLDER_ANIMATIONS = {
-  // In production, upload your own GIFs/videos to Cloudinary via admin panel
-  // The system will auto-detect format and display appropriately
-  placeholder: null, // No animation by default
-};
-
 const exercises = [
   // ============================================
   // CHEST EXERCISES

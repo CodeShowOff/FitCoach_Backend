@@ -256,6 +256,12 @@ const userSchema = new mongoose.Schema(
       max: 500,
       default: null,
     },
+    startWeight: {
+      type: Number,
+      min: 1,
+      max: 500,
+      default: null,
+    },
     // Water intake tracking - stores last 7 days only
     waterIntakeLogs: [{
       date: {

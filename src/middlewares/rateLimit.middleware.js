@@ -28,6 +28,13 @@ export const generalLimiter = rateLimit({
   ...limiterOptions,
   windowMs: 15 * 60 * 1000,
   limit: 500, // Increased from 100 to 500
+  skip: (req) => {
+    // Never rate-limit health checks or preflight requests.
+    // Useful for uptime monitors (Render, cron-job.org, etc.).
+    const path = req.path || "";
+    if (req.method === "OPTIONS") return true;
+    return path === "/v1/health" || path === "/v1/health/";
+  },
   message: {
     success: false,
     message: "Too many requests. Please slow down.",

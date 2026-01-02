@@ -21,6 +21,9 @@ const tokenSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Index for fast token lookups during refresh
+tokenSchema.index({ token: 1 });
+
 // Automatically delete expired tokens
 tokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 

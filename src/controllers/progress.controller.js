@@ -651,6 +651,7 @@ export const getGoalWeight = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     goalWeight: user.goalWeight || null,
+    startWeight: user.startWeight || null,
   });
 });
 
@@ -661,8 +662,9 @@ export const getGoalWeight = asyncHandler(async (req, res) => {
 // ------------------------------
 export const updateGoalWeight = asyncHandler(async (req, res) => {
   const schema = Joi.object({
-    goalWeight: Joi.number().min(1).max(500).required(),
-  });
+    goalWeight: Joi.number().min(1).max(500),
+    startWeight: Joi.number().min(1).max(500).allow(null),
+  }).or("goalWeight", "startWeight");
 
   const { error, value } = schema.validate(req.body);
   if (error) {
@@ -676,13 +678,20 @@ export const updateGoalWeight = asyncHandler(async (req, res) => {
     throw new Error("User not found");
   }
 
-  user.goalWeight = value.goalWeight;
+  if (value.goalWeight !== undefined) {
+    user.goalWeight = value.goalWeight;
+  }
+
+  if (value.startWeight !== undefined) {
+    user.startWeight = value.startWeight;
+  }
   await user.save();
 
   res.json({
     success: true,
     message: "Goal weight updated successfully",
     goalWeight: user.goalWeight,
+    startWeight: user.startWeight || null,
   });
 });
 
