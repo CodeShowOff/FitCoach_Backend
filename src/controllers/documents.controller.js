@@ -1,10 +1,29 @@
 // src/controllers/documents.controller.js
 import asyncHandler from "express-async-handler";
 import streamifier from "streamifier";
+import { Readable } from "node:stream";
 import cloudinary from "../config/cloudinary.js";
 import Document from "../models/Document.js";
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+
+function toClientDocumentPayload(doc) {
+  return {
+    _id: String(doc._id),
+    userId: String(doc.userId),
+    publicId: doc.publicId,
+    resourceType: doc.resourceType,
+    mimeType: doc.mimeType,
+    originalName: doc.originalName,
+    name: doc.name ?? null,
+    bytes: doc.bytes ?? 0,
+    format: doc.format ?? null,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+    // Frontend should use this instead of the Cloudinary URL
+    viewUrl: `/api/v1/documents/${String(doc._id)}/file`,
+  };
+}
 
 // ------------------------------
 // @desc Upload a health document (PDF/image) for current client
@@ -67,7 +86,7 @@ export const uploadMyDocument = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     message: "Document uploaded successfully",
-    data: doc,
+    data: toClientDocumentPayload(doc.toObject ? doc.toObject() : doc),
   });
 });
 
@@ -83,6 +102,43 @@ export const listMyDocuments = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: docs,
+    data: docs.map(toClientDocumentPayload),
   });
+});
+
+// ------------------------------
+// @desc Stream a document file for current client (no Cloudinary URL exposure)
+// @route GET /api/v1/documents/:id/file
+// @access Private (client)
+// ------------------------------
+export const streamMyDocumentFile = asyncHandler(async (req, res) => {
+  const docId = req.params.id;
+
+  const doc = await Document.findOne({ _id: docId, userId: req.user._id }).lean();
+  if (!doc) {
+    res.status(404);
+    throw new Error("Document not found");
+  }
+
+  const upstream = await fetch(doc.url);
+  if (!upstream.ok || !upstream.body) {
+    res.status(502);
+    throw new Error("Failed to fetch document");
+  }
+
+  const contentType = doc.mimeType || upstream.headers.get("content-type") || "application/octet-stream";
+  const contentLength = upstream.headers.get("content-length");
+
+  res.setHeader("Content-Type", contentType);
+  if (contentLength) res.setHeader("Content-Length", contentLength);
+
+  // Prevent caching of sensitive medical documents
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+
+  const filename = String(doc.originalName || doc.name || "document").replace(/[\r\n"]/g, "");
+  res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+
+  Readable.fromWeb(upstream.body).pipe(res);
 });

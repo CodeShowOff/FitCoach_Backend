@@ -7,6 +7,28 @@ import Subscription from "../models/Subscription.js";
 import Plan from "../models/Plan.js";
 import User from "../models/User.js";
 
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+function getISTNow() {
+  return new Date(Date.now() + IST_OFFSET_MS);
+}
+
+function getISTDayOfWeekFromUtcDate(date) {
+  return new Date(date.getTime() + IST_OFFSET_MS).getUTCDay();
+}
+
+// Monday=1 ... Sunday=7
+function getISTDayNumberMon1FromDayOfWeek(dayOfWeek) {
+  return dayOfWeek === 0 ? 7 : dayOfWeek;
+}
+
+// Returns a Date whose epoch corresponds to IST midnight, stored as UTC time.
+function getISTStartOfDayUtc(date = new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const istMidnightAsUtc = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 0, 0, 0, 0);
+  return new Date(istMidnightAsUtc - IST_OFFSET_MS);
+}
+
 // ------------------------------
 // 🧩 Validation Schemas
 // ------------------------------
@@ -85,18 +107,15 @@ async function getClientWorkoutPlan(clientId) {
 // Helper to create workout logs for a period
 async function generateWorkoutLogs(clientId, coachId, workoutPlan, subscription, startDate, endDate) {
   const logs = [];
-  const current = new Date(startDate);
-  current.setHours(0, 0, 0, 0);
-  
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
+  const current = getISTStartOfDayUtc(startDate);
+  const endDay = getISTStartOfDayUtc(endDate);
 
   let weekNumber = 1;
-  const weekStartDate = new Date(subscription.startDate);
-  weekStartDate.setHours(0, 0, 0, 0);
+  const weekStartDate = getISTStartOfDayUtc(subscription.startDate);
 
-  while (current <= end) {
-    const dayOfWeek = current.getUTCDay();
+  while (current <= endDay) {
+    const dayOfWeek = getISTDayOfWeekFromUtcDate(current);
+    const dayNumber = getISTDayNumberMon1FromDayOfWeek(dayOfWeek);
     
     // Calculate week number
     const daysSinceStart = Math.floor((current - weekStartDate) / (1000 * 60 * 60 * 24));
@@ -104,14 +123,12 @@ async function generateWorkoutLogs(clientId, coachId, workoutPlan, subscription,
 
     // Find the day in the weekly schedule - check both dayOfWeek and dayNumber
     const scheduleDay = workoutPlan.weeklySchedule.find(
-      (day) => day.dayOfWeek === dayOfWeek || day.dayNumber === dayOfWeek + 1
+      (day) => day.dayOfWeek === dayOfWeek || day.dayNumber === dayNumber
     );
 
     // Create date range for checking existing logs
     const dayStart = new Date(current);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(current);
-    dayEnd.setHours(23, 59, 59, 999);
+    const nextDayStart = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
 
     // Check if log already exists for this day
     const existingLog = await ClientWorkoutLog.findOne({
@@ -119,7 +136,7 @@ async function generateWorkoutLogs(clientId, coachId, workoutPlan, subscription,
       workoutPlanId: workoutPlan._id,
       scheduledDate: {
         $gte: dayStart,
-        $lt: dayEnd,
+        $lt: nextDayStart,
       },
     });
 
@@ -131,9 +148,9 @@ async function generateWorkoutLogs(clientId, coachId, workoutPlan, subscription,
         subscriptionId: subscription._id,
         scheduledDate: new Date(dayStart),
         dayOfWeek,
-        dayNumber: scheduleDay?.dayNumber || dayOfWeek + 1,
+        dayNumber: scheduleDay?.dayNumber || dayNumber,
         weekNumber,
-        workoutName: scheduleDay?.dayName || `Day ${dayOfWeek + 1}`,
+        workoutName: scheduleDay?.dayName || `Day ${dayNumber}`,
         focusArea: scheduleDay?.focusArea,
         status: scheduleDay?.isRestDay ? "rest_day" : "scheduled",
         exerciseLogs: [],
@@ -162,8 +179,7 @@ async function generateWorkoutLogs(clientId, coachId, workoutPlan, subscription,
     }
 
     // Move to next day
-    current.setDate(current.getDate() + 1);
-    current.setHours(0, 0, 0, 0);
+    current.setTime(current.getTime() + 24 * 60 * 60 * 1000);
   }
 
   if (logs.length > 0) {
@@ -240,18 +256,16 @@ export const getTodaysWorkout = asyncHandler(async (req, res) => {
     });
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const dayOfWeek = today.getUTCDay();
+  const today = getISTStartOfDayUtc();
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  const dayOfWeek = getISTNow().getUTCDay();
+  const dayNumber = getISTDayNumberMon1FromDayOfWeek(dayOfWeek);
 
   const results = [];
 
   for (const workoutPlan of workoutPlans) {
     const scheduleDay = workoutPlan.weeklySchedule?.find(
-      (day) => day.dayOfWeek === dayOfWeek || day.dayNumber === dayOfWeek + 1
+      (day) => day.dayOfWeek === dayOfWeek || day.dayNumber === dayNumber
     );
 
     // If a plan doesn't have a schedule for today, skip it.
@@ -301,9 +315,9 @@ export const getTodaysWorkout = asyncHandler(async (req, res) => {
         subscriptionId: subscription._id,
         scheduledDate: today,
         dayOfWeek,
-        dayNumber: scheduleDay.dayNumber || dayOfWeek + 1,
+        dayNumber: scheduleDay.dayNumber || dayNumber,
         weekNumber: 1,
-        workoutName: scheduleDay.dayName || `Day ${dayOfWeek + 1}`,
+        workoutName: scheduleDay.dayName || `Day ${dayNumber}`,
         focusArea: scheduleDay.focusArea,
         status: scheduleDay.isRestDay ? "rest_day" : "scheduled",
         exerciseLogs,
@@ -395,16 +409,13 @@ export const getWeeklySchedule = asyncHandler(async (req, res) => {
     });
   }
 
-  // Get start of current week (Monday)
-  const today = new Date();
-  const dayOfWeek = today.getUTCDay();
-  const startOfWeek = new Date(today);
-  startOfWeek.setUTCDate(today.getUTCDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  startOfWeek.setUTCHours(0, 0, 0, 0);
-
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 6);
-  endOfWeek.setHours(23, 59, 59, 999);
+  // Get start of current week (Monday) in IST
+  const istNow = getISTNow();
+  const istDayOfWeek = istNow.getUTCDay();
+  const startOfTodayIst = getISTStartOfDayUtc();
+  const daysSinceMonday = istDayOfWeek === 0 ? 6 : istDayOfWeek - 1;
+  const startOfWeek = new Date(startOfTodayIst.getTime() - daysSinceMonday * 24 * 60 * 60 * 1000);
+  const endOfWeek = new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
 
   // Generate logs for the week
   await generateWorkoutLogs(

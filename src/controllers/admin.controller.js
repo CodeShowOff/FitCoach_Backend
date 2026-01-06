@@ -16,6 +16,7 @@ import ProgressPhoto from "../models/ProgressPhoto.js";
 import Notification from "../models/Notification.js";
 import Voucher from "../models/Voucher.js";
 import ContactRequest from "../models/ContactRequest.js";
+import PlatformSubscription from "../models/PlatformSubscription.js";
 import { purgeStaleUnverifiedUsers } from "../jobs/reminders.job.js";
 import { cleanupOldMessages, getCleanupStats } from "../jobs/chatCleanup.job.js";
 import cloudinary from "../config/cloudinary.js";
@@ -687,6 +688,9 @@ export const processDeletionRequest = asyncHandler(async (req, res) => {
     await Promise.all([
       // Auth & Sessions
       Token.deleteMany({ userId }),
+
+      // Platform subscriptions (coach subscription to use platform)
+      PlatformSubscription.deleteMany({ userId }),
       
       // Client-specific data
       Subscription.deleteMany({ clientId: userId }),

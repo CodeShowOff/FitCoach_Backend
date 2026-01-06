@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import User from "../models/User.js";
+import PlatformSubscription from "../models/PlatformSubscription.js";
 
 dotenv.config({ quiet: true });
 
@@ -22,8 +23,16 @@ export const purgeStaleUnverifiedUsers = async (options = {}) => {
 			emailVerificationOtpExpire: { $lt: cutoff },
 		};
 
-		const result = await User.deleteMany(filter);
-		return result?.deletedCount ?? 0;
+		const staleUsers = await User.find(filter).select("_id").lean();
+		const userIds = staleUsers.map((u) => u._id);
+		if (userIds.length === 0) return 0;
+
+		const [userResult] = await Promise.all([
+			User.deleteMany({ _id: { $in: userIds } }),
+			PlatformSubscription.deleteMany({ userId: { $in: userIds } }),
+		]);
+
+		return userResult?.deletedCount ?? 0;
 	} catch (error) {
 		console.error("❌ Error in purgeStaleUnverifiedUsers:", error);
 		return 0;

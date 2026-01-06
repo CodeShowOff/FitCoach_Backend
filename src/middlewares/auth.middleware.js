@@ -16,6 +16,12 @@ export const protect = asyncHandler(async (req, res, next) => {
     token = req.headers.authorization.split(" ")[1];
   }
 
+  // Fallback for same-origin browser requests (e.g., <img>, <iframe>)
+  // Frontend sets a short-lived `accessToken` cookie for SSR/proxy.
+  if (!token && req.cookies?.accessToken) {
+    token = req.cookies.accessToken;
+  }
+
   if (!token) {
     res.status(401);
     throw new Error("Not authorized, token missing");

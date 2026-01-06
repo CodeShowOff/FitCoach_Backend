@@ -220,11 +220,19 @@ export const getAllSubscriptions = asyncHandler(async (req, res) => {
     .limit(Number(limit))
     .skip((Number(page) - 1) * Number(limit));
 
+  // If a user is deleted without cleaning up, populate() yields null userId.
+  // Clean these up so admin never sees "[Deleted User]" rows.
+  const orphanIds = subscriptions.filter((s) => !s.userId).map((s) => s._id);
+  if (orphanIds.length > 0) {
+    await PlatformSubscription.deleteMany({ _id: { $in: orphanIds } });
+  }
+
+  const visibleSubscriptions = subscriptions.filter((s) => s.userId);
   const total = await PlatformSubscription.countDocuments(query);
 
   res.json({
     success: true,
-    data: subscriptions,
+    data: visibleSubscriptions,
     pagination: {
       page: Number(page),
       limit: Number(limit),
@@ -245,15 +253,22 @@ export const getPendingPayments = asyncHandler(async (req, res) => {
     select: "fullName email phone referralCode",
   });
 
+  const orphanIds = subscriptions.filter((s) => !s.userId).map((s) => s._id);
+  if (orphanIds.length > 0) {
+    await PlatformSubscription.deleteMany({ _id: { $in: orphanIds } });
+  }
+
+  const visibleSubscriptions = subscriptions.filter((s) => s.userId);
+
   // Return subscriptions with their payment history
   res.json({
     success: true,
-    data: subscriptions,
+    data: visibleSubscriptions,
     pagination: {
-      total: subscriptions.length,
+      total: visibleSubscriptions.length,
       page: 1,
       totalPages: 1,
-      limit: subscriptions.length,
+      limit: visibleSubscriptions.length,
     },
   });
 });
