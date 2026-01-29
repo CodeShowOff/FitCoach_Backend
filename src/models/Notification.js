@@ -8,7 +8,12 @@ const notificationSchema = new mongoose.Schema(
     roleScope: { type: String, enum: ["all", "clients", "coaches", "admins", null], default: null },
     title: { type: String, trim: true, default: null },
     message: { type: String, trim: true, required: true },
-    type: { type: String, enum: ["info", "order", "plan", "system"], default: "info", index: true },
+    type: {
+      type: String,
+      enum: ["info", "order", "plan", "system", "subscription_warning", "subscription_expired"],
+      default: "info",
+      index: true,
+    },
     meta: { type: Object, default: {} },
     readAt: { type: Date, default: null, index: true },
   },
