@@ -533,7 +533,7 @@ export const loginUser = asyncHandler(async (req, res) => {
   if (user.isActive === false) {
     res.status(403);
     throw new Error(
-      "Your account has been deactivated by the admin. Please contact admin at mail.pulseledger@gmail.com to reactivate."
+      "Your account has been deactivated by the admin. Please contact admin at mail.fitcoach@gmail.com to reactivate."
     );
   }
 

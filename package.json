@@ -1,7 +1,7 @@
 {
-  "name": "pulse-ledger-backend",
+  "name": "fit-coach-backend",
   "version": "0.1.0",
-  "description": "Backend for Pulse Ledger Portal — coach/client management, plans, progress tracking, subscriptions",
+  "description": "Backend for Fit Coach Portal — coach/client management, plans, progress tracking, subscriptions",
   "main": "src/server.js",
   "type": "module",
   "engines": {

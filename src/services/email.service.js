@@ -2,7 +2,7 @@ import pkg from "@getbrevo/brevo";
 const { TransactionalEmailsApi, SendSmtpEmail } = pkg;
 
 const FROM_EMAIL = process.env.BREVO_FROM_EMAIL || "no-reply@health-app.local";
-const APP_NAME = process.env.APP_NAME || "PulseLedger";
+const APP_NAME = process.env.APP_NAME || "FitCoach";
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 
 if (!BREVO_API_KEY) {

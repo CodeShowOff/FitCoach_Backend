@@ -2048,7 +2048,7 @@ const foodItems = [
 async function seedFoodItems() {
   try {
     // Connect to MongoDB
-    const mongoUri = process.env.MONGO_URI || "mongodb://localhost:27017/pulseledger";
+    const mongoUri = process.env.MONGO_URI || "mongodb://localhost:27017/fitcoach";
     await mongoose.connect(mongoUri);
     console.log("✅ Connected to MongoDB");
 

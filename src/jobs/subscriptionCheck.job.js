@@ -97,7 +97,7 @@ async function sendThreeDayWarnings() {
           recipientId: user._id,
           type: "subscription_warning",
           title: `${subscription.status === "trial" ? "Trial" : "Subscription"} Expiring Soon`,
-          message: `Your ${subscription.status === "trial" ? "free trial" : "subscription"} will expire in ${daysRemaining} day${daysRemaining !== 1 ? "s" : ""}. Pay ₹99 to continue using PulseLedger.`,
+          message: `Your ${subscription.status === "trial" ? "free trial" : "subscription"} will expire in ${daysRemaining} day${daysRemaining !== 1 ? "s" : ""}. Pay ₹99 to continue using FitCoach.`,
           priority: "high",
         });
 
@@ -108,14 +108,14 @@ async function sendThreeDayWarnings() {
         emailPromises.push(
           sendEmail({
             to: user.email,
-            subject: `PulseLedger ${subscription.status === "trial" ? "Trial" : "Subscription"} Expiring in ${daysRemaining} Days`,
+            subject: `FitCoach ${subscription.status === "trial" ? "Trial" : "Subscription"} Expiring in ${daysRemaining} Days`,
             html: `
               <h2>Your ${subscription.status === "trial" ? "Free Trial" : "Subscription"} is Expiring Soon</h2>
               <p>Hi ${user.fullName},</p>
-              <p>Your PulseLedger ${subscription.status === "trial" ? "free trial" : "subscription"} will expire in <strong>${daysRemaining} day${daysRemaining !== 1 ? "s" : ""}</strong>.</p>
+              <p>Your FitCoach ${subscription.status === "trial" ? "free trial" : "subscription"} will expire in <strong>${daysRemaining} day${daysRemaining !== 1 ? "s" : ""}</strong>.</p>
               <p>To continue accessing the platform without interruption, please make a payment of <strong>₹99</strong>.</p>
               <p><a href="${process.env.FRONTEND_URL}/coach/platform-subscription" style="display: inline-block; padding: 12px 24px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Pay Now</a></p>
-              <p>Thank you for using PulseLedger!</p>
+              <p>Thank you for using FitCoach!</p>
             `,
           }).catch((err) => {
             console.error(`Failed to send email to ${user.email}:`, err);
@@ -197,15 +197,15 @@ async function sendOneDayWarnings() {
         emailPromises.push(
           sendEmail({
             to: user.email,
-            subject: `⚠️ PulseLedger ${subscription.status === "trial" ? "Trial" : "Subscription"} Expires Tomorrow`,
+            subject: `⚠️ FitCoach ${subscription.status === "trial" ? "Trial" : "Subscription"} Expires Tomorrow`,
             html: `
               <h2 style="color: #dc2626;">Urgent: Your ${subscription.status === "trial" ? "Free Trial" : "Subscription"} Expires Tomorrow</h2>
               <p>Hi ${user.fullName},</p>
-              <p><strong>Your PulseLedger ${subscription.status === "trial" ? "free trial" : "subscription"} will expire tomorrow!</strong></p>
+              <p><strong>Your FitCoach ${subscription.status === "trial" ? "free trial" : "subscription"} will expire tomorrow!</strong></p>
               <p>After expiry, you will lose access to all platform features until you make a payment.</p>
-              <p>Pay <strong>₹99</strong> now to continue using PulseLedger:</p>
+              <p>Pay <strong>₹99</strong> now to continue using FitCoach:</p>
               <p><a href="${process.env.FRONTEND_URL}/coach/platform-subscription" style="display: inline-block; padding: 12px 24px; background-color: #dc2626; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Pay Now</a></p>
-              <p>Thank you for using PulseLedger!</p>
+              <p>Thank you for using FitCoach!</p>
             `,
           }).catch((err) => {
             console.error(`Failed to send email to ${user.email}:`, err);
@@ -272,7 +272,7 @@ async function sendExpiryNotifications() {
         recipientId: user._id,
         type: "subscription_expired",
         title: "Platform Access Suspended",
-        message: "Your subscription has expired. Pay ₹99 to restore access to PulseLedger.",
+        message: "Your subscription has expired. Pay ₹99 to restore access to FitCoach.",
         priority: "urgent",
       });
 
@@ -283,15 +283,15 @@ async function sendExpiryNotifications() {
       emailPromises.push(
         sendEmail({
           to: user.email,
-          subject: "🚨 PulseLedger Subscription Expired - Action Required",
+          subject: "🚨 FitCoach Subscription Expired - Action Required",
           html: `
-            <h2 style="color: #dc2626;">Your PulseLedger Subscription Has Expired</h2>
+            <h2 style="color: #dc2626;">Your FitCoach Subscription Has Expired</h2>
             <p>Hi ${user.fullName},</p>
-            <p><strong>Your PulseLedger subscription has expired and your platform access has been suspended.</strong></p>
+            <p><strong>Your FitCoach subscription has expired and your platform access has been suspended.</strong></p>
             <p>You will not be able to access coach features until you renew your subscription.</p>
             <p>To restore access, please make a payment of <strong>₹99</strong>:</p>
             <p><a href="${process.env.FRONTEND_URL}/coach/platform-subscription" style="display: inline-block; padding: 12px 24px; background-color: #dc2626; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Renew Subscription</a></p>
-            <p>Thank you for using PulseLedger!</p>
+            <p>Thank you for using FitCoach!</p>
           `,
         }).catch((err) => {
           console.error(`Failed to send email to ${user.email}:`, err);

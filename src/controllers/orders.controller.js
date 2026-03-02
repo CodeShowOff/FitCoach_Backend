@@ -354,7 +354,7 @@ export const generateInvoice = asyncHandler(async (req, res) => {
   // Pipe PDF to response
   doc.pipe(res);
 
-  // Add PulseLedger logo and branding at the top
+  // Add FitCoach logo and branding at the top
   const logoPath = path.join(__dirname, "../utils/logo.png");
   
   // Check if logo exists and add it
@@ -372,8 +372,8 @@ export const generateInvoice = asyncHandler(async (req, res) => {
     }
   }
 
-  // PulseLedger branding text
-  doc.fontSize(20).font("Helvetica-Bold").fillColor("#2563eb").text("PulseLedger", { align: "center" });
+  // FitCoach branding text
+  doc.fontSize(20).font("Helvetica-Bold").fillColor("#2563eb").text("FitCoach", { align: "center" });
   doc.fontSize(10).font("Helvetica").fillColor("#6b7280").text("Health Management Portal", { align: "center" });
   doc.moveDown(1);
 
