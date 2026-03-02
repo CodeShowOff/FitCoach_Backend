@@ -38,9 +38,8 @@ const coachReviewSchema = new mongoose.Schema(
 
 // Compound index for efficient querying
 coachReviewSchema.index({ coach: 1, isApproved: 1, createdAt: -1 });
-coachReviewSchema.index({ client: 1, coach: 1 });
 
-// Prevent duplicate reviews from same client to same coach
+// Prevent duplicate reviews from same client to same coach (also serves as a query index)
 coachReviewSchema.index({ client: 1, coach: 1 }, { unique: true });
 
 const CoachReview = mongoose.model("CoachReview", coachReviewSchema);
