@@ -5,7 +5,6 @@ import Product from "../models/Product.js";
 import Subscription from "../models/Subscription.js";
 import Order from "../models/Order.js";
 import CoachReview from "../models/CoachReview.js";
-import { getPlanSummariesForClients } from "../services/planSummary.service.js";
 
 // ------------------------------
 // 📊 @desc Get coach dashboard stats
@@ -109,69 +108,21 @@ export const getCoachClients = asyncHandler(async (req, res) => {
   if (search) {
     const safe = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const regex = new RegExp(safe, "i");
-    queryFilter.$or = [
-      { fullName: regex },
-      { email: regex },
-      { phone: regex },
-      { whatsappNumber: regex },
-    ];
+    queryFilter.$or = [{ fullName: regex }];
   }
 
   const clients = await User.find(queryFilter)
-    .select("fullName email phone whatsappNumber createdAt weightHistory heightHistory bmiHistory")
+    .select("fullName avatarUrl createdAt")
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
     .lean();
 
-  // Extract latest progress from each client's history arrays
-  const { summaries } = await getPlanSummariesForClients(coachId, clients.map((c) => c._id));
-
-  const clientsWithProgress = clients.map((c) => {
-    const latestWeight = c.weightHistory?.length > 0 
-      ? c.weightHistory[c.weightHistory.length - 1] 
-      : null;
-    const latestHeight = c.heightHistory?.length > 0 
-      ? c.heightHistory[c.heightHistory.length - 1] 
-      : null;
-    const latestBmi = c.bmiHistory?.length > 0 
-      ? c.bmiHistory[c.bmiHistory.length - 1] 
-      : null;
-
-    // Determine the most recent date across all metrics
-    const dates = [
-      latestWeight?.date,
-      latestHeight?.date,
-      latestBmi?.date,
-    ].filter(Boolean);
-    const mostRecentDate = dates.length > 0 ? new Date(Math.max(...dates.map(d => new Date(d)))) : null;
-
-    return {
-      ...c,
-      weight: latestWeight?.value ?? null,
-      bmi: latestBmi?.value ?? null,
-      height: latestHeight?.value ?? null,
-      latestProgress: (latestWeight || latestHeight || latestBmi)
-        ? {
-          weight: latestWeight?.value ?? null,
-          height: latestHeight?.value ?? null,
-          bmi: latestBmi?.value ?? null,
-          date: mostRecentDate,
-        }
-        : null,
-      planSummary: summaries[c._id.toString()] || {
-        current: null,
-        pending: [],
-        defaultPlan: null,
-      },
-    };
-  });
-
   const total = await User.countDocuments(queryFilter);
 
   res.json({
     success: true,
-    data: clientsWithProgress,
+    data: clients,
     pagination: { total, page, totalPages: Math.ceil(total / limit) },
   });
 });
