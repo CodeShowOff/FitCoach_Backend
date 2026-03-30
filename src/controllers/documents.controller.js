@@ -107,6 +107,38 @@ export const listMyDocuments = asyncHandler(async (req, res) => {
 });
 
 // ------------------------------
+// @desc Delete a document uploaded by current client
+// @route DELETE /api/v1/documents/:id
+// @access Private (client)
+// ------------------------------
+export const deleteMyDocument = asyncHandler(async (req, res) => {
+  const docId = req.params.id;
+
+  const doc = await Document.findOne({ _id: docId, userId: req.user._id });
+  if (!doc) {
+    res.status(404);
+    throw new Error("Document not found");
+  }
+
+  try {
+    await cloudinary.uploader.destroy(doc.publicId, {
+      invalidate: true,
+      resource_type: doc.resourceType || "image",
+    });
+  } catch (error) {
+    console.warn("Failed to delete document from Cloudinary:", error?.message || error);
+    // Continue with DB deletion even if Cloudinary cleanup fails
+  }
+
+  await Document.deleteOne({ _id: doc._id });
+
+  res.json({
+    success: true,
+    message: "Document deleted successfully",
+  });
+});
+
+// ------------------------------
 // @desc Stream a document file for current client (no Cloudinary URL exposure)
 // @route GET /api/v1/documents/:id/file
 // @access Private (client)

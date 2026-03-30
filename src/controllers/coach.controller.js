@@ -112,7 +112,7 @@ export const getCoachClients = asyncHandler(async (req, res) => {
   }
 
   const clients = await User.find(queryFilter)
-    .select("fullName avatarUrl createdAt")
+    .select("fullName email avatarUrl createdAt phone whatsappNumber address.phoneNumber")
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
