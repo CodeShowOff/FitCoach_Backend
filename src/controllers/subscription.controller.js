@@ -104,13 +104,49 @@ export const getMySubscriptions = asyncHandler(async (req, res) => {
     { $set: { status: "expired" } }
   );
 
-  const subscriptions = await Subscription.find({ clientId: req.user._id })
+  const parsedPage = Number.parseInt(String(req.query.page ?? ""), 10);
+  const parsedLimit = Number.parseInt(String(req.query.limit ?? ""), 10);
+  const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const hasLimit = Number.isFinite(parsedLimit) && parsedLimit > 0;
+  const limit = hasLimit ? Math.min(parsedLimit, 50) : null;
+  const sortParam = typeof req.query.sort === "string" ? req.query.sort.toLowerCase() : "latest";
+  const sortDirection = sortParam === "oldest" ? 1 : -1;
+
+  const query = { clientId: req.user._id };
+
+  if (!limit) {
+    const subscriptions = await Subscription.find(query)
+      .populate("planId", "title description durationWeeks price goal isDefault")
+      .populate("coachId", "fullName email")
+      .sort({ createdAt: sortDirection });
+
+    return res.json({
+      success: true,
+      data: subscriptions,
+    });
+  }
+
+  const totalItems = await Subscription.countDocuments(query);
+  const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+  const currentPage = Math.min(page, totalPages);
+  const skip = (currentPage - 1) * limit;
+
+  const subscriptions = await Subscription.find(query)
     .populate("planId", "title description durationWeeks price goal isDefault")
-    .populate("coachId", "fullName email");
+    .populate("coachId", "fullName email")
+    .sort({ createdAt: sortDirection })
+    .skip(skip)
+    .limit(limit);
 
   res.json({
     success: true,
     data: subscriptions,
+    pagination: {
+      currentPage,
+      totalPages,
+      totalItems,
+      itemsPerPage: limit,
+    },
   });
 });
 
