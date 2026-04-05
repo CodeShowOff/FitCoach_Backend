@@ -247,6 +247,7 @@ const clientWorkoutLogSchema = new mongoose.Schema(
 clientWorkoutLogSchema.index({ clientId: 1, scheduledDate: -1 });
 clientWorkoutLogSchema.index({ clientId: 1, status: 1 });
 clientWorkoutLogSchema.index({ clientId: 1, status: 1, scheduledDate: 1 });
+clientWorkoutLogSchema.index({ status: 1, scheduledDate: 1 });
 clientWorkoutLogSchema.index({ coachId: 1, clientId: 1, scheduledDate: -1 });
 clientWorkoutLogSchema.index({ workoutPlanId: 1, scheduledDate: -1 });
 clientWorkoutLogSchema.index({ subscriptionId: 1, scheduledDate: -1 });
@@ -271,7 +272,16 @@ clientWorkoutLogSchema.methods.getCompletionPercentage = function () {
 
 // Method to mark workout as complete
 clientWorkoutLogSchema.methods.markComplete = function () {
-  this.status = this.completedExercises === this.totalExercises ? "completed" : "partial";
+  const totalExercises = Array.isArray(this.exerciseLogs) ? this.exerciseLogs.length : 0;
+  const completedExercises = Array.isArray(this.exerciseLogs)
+    ? this.exerciseLogs.filter((e) => e.completed).length
+    : 0;
+
+  // Keep summary fields in sync before status determination.
+  this.totalExercises = totalExercises;
+  this.completedExercises = completedExercises;
+
+  this.status = completedExercises === totalExercises ? "completed" : "partial";
   this.completedAt = new Date();
   if (this.startedAt) {
     this.actualDuration = Math.round((this.completedAt - this.startedAt) / 60000);

@@ -202,6 +202,25 @@ const clientDietLogSchema = new mongoose.Schema(
       min: 0,
       max: 20,
     },
+    // Supplement intake tracking
+    supplementsTaken: [
+      {
+        name: {
+          type: String,
+          trim: true,
+          maxlength: 100,
+        },
+        taken: {
+          type: Boolean,
+          default: false,
+        },
+        notes: {
+          type: String,
+          trim: true,
+          maxlength: 200,
+        },
+      },
+    ],
     // Overall adherence score (percentage)
     adherenceScore: {
       type: Number,

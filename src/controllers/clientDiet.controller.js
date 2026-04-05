@@ -50,6 +50,7 @@ const createLogSchema = Joi.object({
   // Prefer `meals` (matches model + frontend), but accept legacy `mealsLogged` too
   meals: Joi.array().items(loggedMealSchema).optional(),
   mealsLogged: Joi.array().items(loggedMealSchema).optional(),
+  waterIntake: Joi.number().min(0).max(20).optional(),
   waterIntakeLiters: Joi.number().min(0).max(20).optional(),
   supplementsTaken: Joi.array()
     .items(
@@ -61,11 +62,13 @@ const createLogSchema = Joi.object({
     )
     .optional(),
   notes: Joi.string().max(1000).optional().allow("", null),
+  clientNotes: Joi.string().max(1000).optional().allow("", null),
 });
 
 const updateLogSchema = Joi.object({
   meals: Joi.array().items(loggedMealSchema).optional(),
   mealsLogged: Joi.array().items(loggedMealSchema).optional(),
+  waterIntake: Joi.number().min(0).max(20).optional(),
   waterIntakeLiters: Joi.number().min(0).max(20).optional(),
   supplementsTaken: Joi.array()
     .items(
@@ -77,6 +80,7 @@ const updateLogSchema = Joi.object({
     )
     .optional(),
   notes: Joi.string().max(1000).optional().allow("", null),
+  clientNotes: Joi.string().max(1000).optional().allow("", null),
 });
 
 const addMealSchema = Joi.object({
@@ -89,6 +93,45 @@ const addMealSchema = Joi.object({
   photoUrl: Joi.string().uri().optional().allow("", null),
   notes: Joi.string().max(500).optional().allow("", null),
 });
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getISTDayOfWeek(date = new Date()) {
+  return new Date(date.getTime() + IST_OFFSET_MS).getUTCDay();
+}
+
+function getISTDayNumberMon1FromDayOfWeek(dayOfWeek) {
+  return dayOfWeek === 0 ? 7 : dayOfWeek;
+}
+
+function getISTStartOfDayUtc(date = new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const istMidnightAsUtc = Date.UTC(
+    ist.getUTCFullYear(),
+    ist.getUTCMonth(),
+    ist.getUTCDate(),
+    0,
+    0,
+    0,
+    0
+  );
+  return new Date(istMidnightAsUtc - IST_OFFSET_MS);
+}
+
+function parseDateInputToISTStartUtc(dateInput) {
+  const rawValue = Array.isArray(dateInput) ? dateInput[0] : dateInput;
+  if (typeof rawValue !== "string" || rawValue.trim() === "") {
+    return null;
+  }
+
+  const parsedDate = new Date(rawValue);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return getISTStartOfDayUtc(parsedDate);
+}
 
 function parseTimeStringToDate(timeInput, baseDate) {
   if (timeInput === undefined || timeInput === null) return undefined;
@@ -146,6 +189,18 @@ function normalizeLoggedMeal(meal, baseDate) {
 function normalizeLoggedMeals(meals, baseDate) {
   if (!Array.isArray(meals)) return meals;
   return meals.map((m) => normalizeLoggedMeal(m, baseDate));
+}
+
+function resolveWaterIntake(payload) {
+  if (payload?.waterIntakeLiters !== undefined) return payload.waterIntakeLiters;
+  if (payload?.waterIntake !== undefined) return payload.waterIntake;
+  return undefined;
+}
+
+function resolveClientNotes(payload) {
+  if (payload?.notes !== undefined) return payload.notes;
+  if (payload?.clientNotes !== undefined) return payload.clientNotes;
+  return undefined;
 }
 
 // Helper to calculate daily totals
@@ -206,8 +261,9 @@ function calculateAdherenceScore(log, dietPlan) {
   }
 
   // Water intake
-  if (targets.water && log.waterIntakeLiters) {
-    const waterRatio = Math.min(1, log.waterIntakeLiters / targets.water);
+  const waterIntake = log.waterIntake ?? log.waterIntakeLiters;
+  if (targets.water && waterIntake !== undefined && waterIntake !== null) {
+    const waterRatio = Math.min(1, waterIntake / targets.water);
     score += waterRatio * 100;
     factors++;
   }
@@ -260,12 +316,12 @@ export const getClientDietPlans = asyncHandler(async (req, res) => {
   const dietPlans = await getClientActiveDietPlans(req.user._id);
 
   // Add today's meals to each plan
-  const today = new Date();
-  const dayOfWeek = today.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
+  const dayOfWeek = getISTDayOfWeek(); // 0 = Sunday, 1 = Monday, etc.
+  const dayNumber = getISTDayNumberMon1FromDayOfWeek(dayOfWeek);
   
   const plansWithTodaysMeals = dietPlans.map(plan => {
     const planObj = plan.toObject();
-    planObj.todaysMeals = plan.getMealsForDay(dayOfWeek);
+    planObj.todaysMeals = plan.getMealsForDay(dayOfWeek, dayNumber);
     return planObj;
   });
 
@@ -326,37 +382,46 @@ export const createDietLog = asyncHandler(async (req, res) => {
   const dietPlan = dietPlans.find((p) => p._id.toString() === value.dietPlanId);
 
   // Check if log already exists for this date
-  const logDate = new Date(value.date);
-  logDate.setHours(0, 0, 0, 0);
+  const logDate = getISTStartOfDayUtc(new Date(value.date));
 
   const existingLog = await ClientDietLog.findOne({
     clientId: req.user._id,
-    dietPlanId: value.dietPlanId,
     date: logDate,
   });
 
   if (existingLog) {
-    res.status(400);
-    throw new Error("A diet log already exists for this date. Please update it instead.");
+    res.status(409);
+    throw new Error("A diet log already exists for this date. Please update the existing log instead.");
   }
 
   const meals = normalizeLoggedMeals(value.meals ?? value.mealsLogged ?? [], logDate);
+  const waterIntake = resolveWaterIntake(value);
+  const clientNotes = resolveClientNotes(value);
 
   // Calculate totals
   const dailyTotals = calculateDailyTotals(meals);
 
   // Create log
-  const log = await ClientDietLog.create({
-    clientId: req.user._id,
-    coachId: dietPlan.coachId,
-    dietPlanId: value.dietPlanId,
-    date: logDate,
-    meals,
-    waterIntakeLiters: value.waterIntakeLiters,
-    supplementsTaken: value.supplementsTaken,
-    dailyTotals,
-    notes: value.notes,
-  });
+  let log;
+  try {
+    log = await ClientDietLog.create({
+      clientId: req.user._id,
+      coachId: dietPlan.coachId,
+      dietPlanId: value.dietPlanId,
+      date: logDate,
+      meals,
+      waterIntake,
+      supplementsTaken: value.supplementsTaken,
+      dailyTotals,
+      clientNotes,
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      res.status(409);
+      throw new Error("A diet log already exists for this date. Please update the existing log instead.");
+    }
+    throw err;
+  }
 
   // Calculate and update adherence score
   log.adherenceScore = calculateAdherenceScore(log, dietPlan);
@@ -388,8 +453,22 @@ export const getClientDietLogs = asyncHandler(async (req, res) => {
 
   if (startDate || endDate) {
     query.date = {};
-    if (startDate) query.date.$gte = new Date(startDate);
-    if (endDate) query.date.$lte = new Date(endDate);
+    if (startDate) {
+      const startBoundary = parseDateInputToISTStartUtc(startDate);
+      if (!startBoundary) {
+        res.status(400);
+        throw new Error("Invalid startDate");
+      }
+      query.date.$gte = startBoundary;
+    }
+    if (endDate) {
+      const endBoundary = parseDateInputToISTStartUtc(endDate);
+      if (!endBoundary) {
+        res.status(400);
+        throw new Error("Invalid endDate");
+      }
+      query.date.$lt = new Date(endBoundary.getTime() + DAY_MS);
+    }
   }
 
   const [logs, total] = await Promise.all([
@@ -441,8 +520,11 @@ export const getDietLogById = asyncHandler(async (req, res) => {
 // @access Private (Client only)
 // ------------------------------
 export const getDietLogByDate = asyncHandler(async (req, res) => {
-  const logDate = new Date(req.params.date);
-  logDate.setHours(0, 0, 0, 0);
+  const logDate = parseDateInputToISTStartUtc(req.params.date);
+  if (!logDate) {
+    res.status(400);
+    throw new Error("Invalid date");
+  }
 
   const { dietPlanId } = req.query;
 
@@ -500,9 +582,11 @@ export const updateDietLog = asyncHandler(async (req, res) => {
   if (value.meals !== undefined) log.meals = normalizeLoggedMeals(value.meals, log.date);
   if (value.mealsLogged !== undefined)
     log.meals = normalizeLoggedMeals(value.mealsLogged, log.date);
-  if (value.waterIntakeLiters !== undefined) log.waterIntakeLiters = value.waterIntakeLiters;
+  const waterIntake = resolveWaterIntake(value);
+  if (waterIntake !== undefined) log.waterIntake = waterIntake;
   if (value.supplementsTaken !== undefined) log.supplementsTaken = value.supplementsTaken;
-  if (value.notes !== undefined) log.notes = value.notes;
+  const clientNotes = resolveClientNotes(value);
+  if (clientNotes !== undefined) log.clientNotes = clientNotes;
 
   // Recalculate totals
   log.dailyTotals = calculateDailyTotals(log.meals);
@@ -595,14 +679,15 @@ export const deleteDietLog = asyncHandler(async (req, res) => {
 // ------------------------------
 export const getDietStats = asyncHandler(async (req, res) => {
   const { dietPlanId, days = 7 } = req.query;
+  const dayCount = Math.max(1, parseInt(days, 10) || 7);
 
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - parseInt(days));
-  startDate.setHours(0, 0, 0, 0);
+  const todayIstStart = getISTStartOfDayUtc();
+  const tomorrowIstStart = new Date(todayIstStart.getTime() + DAY_MS);
+  const startDate = new Date(todayIstStart.getTime() - dayCount * DAY_MS);
 
   const query = {
     clientId: req.user._id,
-    date: { $gte: startDate },
+    date: { $gte: startDate, $lt: tomorrowIstStart },
   };
 
   if (dietPlanId) query.dietPlanId = dietPlanId;
@@ -634,7 +719,7 @@ export const getDietStats = asyncHandler(async (req, res) => {
       totalProtein += log.dailyTotals?.protein || 0;
       totalCarbs += log.dailyTotals?.carbs || 0;
       totalFat += log.dailyTotals?.fat || 0;
-      totalWater += log.waterIntakeLiters || 0;
+      totalWater += log.waterIntake || 0;
       totalAdherence += log.adherenceScore || 0;
 
       stats.dailyBreakdown.push({
@@ -643,7 +728,7 @@ export const getDietStats = asyncHandler(async (req, res) => {
         protein: log.dailyTotals?.protein || 0,
         carbs: log.dailyTotals?.carbs || 0,
         fat: log.dailyTotals?.fat || 0,
-        water: log.waterIntakeLiters || 0,
+        water: log.waterIntake || 0,
         adherence: log.adherenceScore || 0,
         mealsLogged: log.meals?.length || 0,
       });
@@ -709,8 +794,22 @@ export const getClientDietLogsForCoach = asyncHandler(async (req, res) => {
 
   if (startDate || endDate) {
     query.date = {};
-    if (startDate) query.date.$gte = new Date(startDate);
-    if (endDate) query.date.$lte = new Date(endDate);
+    if (startDate) {
+      const startBoundary = parseDateInputToISTStartUtc(startDate);
+      if (!startBoundary) {
+        res.status(400);
+        throw new Error("Invalid startDate");
+      }
+      query.date.$gte = startBoundary;
+    }
+    if (endDate) {
+      const endBoundary = parseDateInputToISTStartUtc(endDate);
+      if (!endBoundary) {
+        res.status(400);
+        throw new Error("Invalid endDate");
+      }
+      query.date.$lt = new Date(endBoundary.getTime() + DAY_MS);
+    }
   }
 
   const [logs, total] = await Promise.all([
@@ -742,6 +841,7 @@ export const getClientDietLogsForCoach = asyncHandler(async (req, res) => {
 export const getClientDietStatsForCoach = asyncHandler(async (req, res) => {
   const { clientId } = req.params;
   const { dietPlanId, days = 7 } = req.query;
+  const dayCount = Math.max(1, parseInt(days, 10) || 7);
 
   // Verify coach has access
   const now = new Date();
@@ -762,14 +862,14 @@ export const getClientDietStatsForCoach = asyncHandler(async (req, res) => {
     throw new Error("You don't have access to this client's data");
   }
 
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - parseInt(days));
-  startDate.setHours(0, 0, 0, 0);
+  const todayIstStart = getISTStartOfDayUtc();
+  const tomorrowIstStart = new Date(todayIstStart.getTime() + DAY_MS);
+  const startDate = new Date(todayIstStart.getTime() - dayCount * DAY_MS);
 
   const query = {
     clientId,
     coachId: req.user._id,
-    date: { $gte: startDate },
+    date: { $gte: startDate, $lt: tomorrowIstStart },
   };
 
   if (dietPlanId) query.dietPlanId = dietPlanId;
@@ -801,7 +901,7 @@ export const getClientDietStatsForCoach = asyncHandler(async (req, res) => {
       totalProtein += log.dailyTotals?.protein || 0;
       totalCarbs += log.dailyTotals?.carbs || 0;
       totalFat += log.dailyTotals?.fat || 0;
-      totalWater += log.waterIntakeLiters || 0;
+      totalWater += log.waterIntake || 0;
       totalAdherence += log.adherenceScore || 0;
 
       stats.dailyBreakdown.push({
@@ -810,7 +910,7 @@ export const getClientDietStatsForCoach = asyncHandler(async (req, res) => {
         protein: log.dailyTotals?.protein || 0,
         carbs: log.dailyTotals?.carbs || 0,
         fat: log.dailyTotals?.fat || 0,
-        water: log.waterIntakeLiters || 0,
+        water: log.waterIntake || 0,
         adherence: log.adherenceScore || 0,
         mealsLogged: log.meals?.length || 0,
       });

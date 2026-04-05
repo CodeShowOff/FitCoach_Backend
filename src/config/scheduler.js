@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { expireCompletedSubscriptions } from "../jobs/subscriptions.job.js";
 import { initializeSubscriptionChecks } from "../jobs/subscriptionCheck.job.js";
 import { cleanupOldMessages } from "../jobs/chatCleanup.job.js";
+import { markOverdueWorkoutsAsMissed } from "../jobs/workoutMissed.job.js";
 
 /**
  * Initialize all scheduled jobs
@@ -32,6 +33,18 @@ export const initializeScheduledJobs = () => {
     }
   });
 
+  // Schedule overdue workout miss-marking - runs every hour
+  cron.schedule("0 * * * *", async () => {
+    try {
+      const result = await markOverdueWorkoutsAsMissed();
+      if (result.modified > 0) {
+        console.log(`🏋️ Cron: ${result.modified} workout log(s) auto-marked as missed`);
+      }
+    } catch (error) {
+      console.error("❌ Workout missed cron job failed:", error);
+    }
+  });
+
   // Run once on startup to catch any missed expirations
   expireCompletedSubscriptions()
     .then((result) => {
@@ -41,6 +54,19 @@ export const initializeScheduledJobs = () => {
     })
     .catch((error) => {
       console.error("❌ STARTUP ERROR: Initial subscription expiry check failed");
+      console.error("   Details:", error.message || error);
+      console.error("⚠️  NOTE: This is non-critical. Hourly cron job will handle it");
+    });
+
+  // Run once on startup to catch any overdue workouts
+  markOverdueWorkoutsAsMissed()
+    .then((result) => {
+      if (result.modified > 0) {
+        console.log(`✅ Startup: ${result.modified} workout log(s) auto-marked as missed`);
+      }
+    })
+    .catch((error) => {
+      console.error("❌ STARTUP ERROR: Initial workout missed check failed");
       console.error("   Details:", error.message || error);
       console.error("⚠️  NOTE: This is non-critical. Hourly cron job will handle it");
     });

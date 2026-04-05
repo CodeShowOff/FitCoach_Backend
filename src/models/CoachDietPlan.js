@@ -397,11 +397,42 @@ coachDietPlanSchema.methods.getDailyTotals = function () {
   };
 };
 
-// Method to get meals for a specific day of week
-coachDietPlanSchema.methods.getMealsForDay = function (dayOfWeek) {
+function normalizeDayOfWeek(value) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 6 ? parsed : undefined;
+}
+
+function normalizeDayNumber(value) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 7 ? parsed : undefined;
+}
+
+function dayNumberFromDayOfWeek(dayOfWeek) {
+  return dayOfWeek === 0 ? 7 : dayOfWeek;
+}
+
+// Method to get meals for a specific day
+// Supports both dayOfWeek (0=Sun..6=Sat) and dayNumber (1=Mon..7=Sun)
+coachDietPlanSchema.methods.getMealsForDay = function (dayOfWeek, dayNumber) {
   // If using new weekly schedule structure
   if (this.weeklySchedule && this.weeklySchedule.length > 0) {
-    const daySchedule = this.weeklySchedule.find((d) => d.dayOfWeek === dayOfWeek);
+    const normalizedDayOfWeek = normalizeDayOfWeek(dayOfWeek);
+    const normalizedDayNumber =
+      normalizeDayNumber(dayNumber) ??
+      (normalizedDayOfWeek !== undefined ? dayNumberFromDayOfWeek(normalizedDayOfWeek) : undefined);
+
+    const daySchedule =
+      (normalizedDayOfWeek !== undefined
+        ? this.weeklySchedule.find(
+            (d) => normalizeDayOfWeek(d.dayOfWeek) === normalizedDayOfWeek
+          )
+        : undefined) ||
+      (normalizedDayNumber !== undefined
+        ? this.weeklySchedule.find(
+            (d) => normalizeDayNumber(d.dayNumber) === normalizedDayNumber
+          )
+        : undefined);
+
     const dayMeals = daySchedule?.meals || [];
 
     // If weeklySchedule exists but meals are incomplete (e.g. foods missing),
@@ -443,12 +474,13 @@ coachDietPlanSchema.methods.getMealsForDay = function (dayOfWeek) {
 coachDietPlanSchema.virtual('todaysMeals').get(function() {
   const today = new Date();
   const dayOfWeek = today.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
-  return this.getMealsForDay(dayOfWeek);
+  const dayNumber = dayNumberFromDayOfWeek(dayOfWeek);
+  return this.getMealsForDay(dayOfWeek, dayNumber);
 });
 
 // Method to get totals for a specific day
-coachDietPlanSchema.methods.getDayTotals = function (dayOfWeek) {
-  const dayMeals = this.getMealsForDay(dayOfWeek);
+coachDietPlanSchema.methods.getDayTotals = function (dayOfWeek, dayNumber) {
+  const dayMeals = this.getMealsForDay(dayOfWeek, dayNumber);
   if (!dayMeals || dayMeals.length === 0) {
     return { calories: 0, protein: 0, carbs: 0, fat: 0 };
   }

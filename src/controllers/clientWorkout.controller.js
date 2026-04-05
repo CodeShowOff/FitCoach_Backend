@@ -8,6 +8,7 @@ import Plan from "../models/Plan.js";
 import User from "../models/User.js";
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function getISTNow() {
   return new Date(Date.now() + IST_OFFSET_MS);
@@ -29,10 +30,26 @@ function getISTStartOfDayUtc(date = new Date()) {
   return new Date(istMidnightAsUtc - IST_OFFSET_MS);
 }
 
+function parseDateInputToISTStartUtc(dateInput) {
+  const rawValue = Array.isArray(dateInput) ? dateInput[0] : dateInput;
+  if (typeof rawValue !== "string" || rawValue.trim() === "") {
+    return null;
+  }
+
+  const parsedDate = new Date(rawValue);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return getISTStartOfDayUtc(parsedDate);
+}
+
 // ------------------------------
 // 🧩 Validation Schemas
 // ------------------------------
 const exerciseLogSchema = Joi.object({
+  exerciseLogId: Joi.string().optional(),
+  exerciseIndex: Joi.number().integer().min(0).optional(),
   exerciseId: Joi.string().optional(),
   exerciseName: Joi.string().max(100).optional(),
   completedSets: Joi.number().min(0).max(20).optional(),
@@ -68,6 +85,90 @@ const completeWorkoutSchema = Joi.object({
   moodAfter: Joi.number().min(1).max(5).optional(),
   clientNotes: Joi.string().max(1000).optional().allow("", null),
 });
+
+function normalizeExerciseName(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function findExerciseLogUpdateIndex(exerciseLogs, update, usedIndexes, fallbackIndex) {
+  if (!Array.isArray(exerciseLogs) || exerciseLogs.length === 0) return -1;
+
+  const availableIndexes = [];
+  for (let index = 0; index < exerciseLogs.length; index += 1) {
+    if (!usedIndexes.has(index)) {
+      availableIndexes.push(index);
+    }
+  }
+
+  const updateLogId = update?.exerciseLogId ? String(update.exerciseLogId) : null;
+  if (updateLogId) {
+    const byLogId = availableIndexes.find(
+      (index) => exerciseLogs[index]?._id?.toString() === updateLogId
+    );
+    if (byLogId !== undefined) return byLogId;
+  }
+
+  const updateExerciseId = update?.exerciseId ? String(update.exerciseId) : null;
+  if (updateExerciseId) {
+    const byExerciseId = availableIndexes.find(
+      (index) => exerciseLogs[index]?.exerciseId?.toString() === updateExerciseId
+    );
+    if (byExerciseId !== undefined) return byExerciseId;
+  }
+
+  const updateExerciseName = normalizeExerciseName(update?.exerciseName);
+  if (updateExerciseName) {
+    const byExerciseName = availableIndexes.find(
+      (index) => normalizeExerciseName(exerciseLogs[index]?.exerciseName) === updateExerciseName
+    );
+    if (byExerciseName !== undefined) return byExerciseName;
+  }
+
+  if (
+    Number.isInteger(update?.exerciseIndex) &&
+    update.exerciseIndex >= 0 &&
+    update.exerciseIndex < exerciseLogs.length &&
+    !usedIndexes.has(update.exerciseIndex)
+  ) {
+    return update.exerciseIndex;
+  }
+
+  if (
+    Number.isInteger(fallbackIndex) &&
+    fallbackIndex >= 0 &&
+    fallbackIndex < exerciseLogs.length &&
+    !usedIndexes.has(fallbackIndex)
+  ) {
+    return fallbackIndex;
+  }
+
+  return -1;
+}
+
+function applyExerciseLogUpdates(log, updates) {
+  if (!Array.isArray(updates) || updates.length === 0) return 0;
+  if (!Array.isArray(log.exerciseLogs) || log.exerciseLogs.length === 0) return 0;
+
+  const usedIndexes = new Set();
+  let appliedCount = 0;
+
+  updates.forEach((update, updateIndex) => {
+    const targetIndex = findExerciseLogUpdateIndex(
+      log.exerciseLogs,
+      update,
+      usedIndexes,
+      updateIndex
+    );
+
+    if (targetIndex === -1) return;
+
+    Object.assign(log.exerciseLogs[targetIndex], update);
+    usedIndexes.add(targetIndex);
+    appliedCount += 1;
+  });
+
+  return appliedCount;
+}
 
 // Helper to get client's active subscription and workout plan
 async function getClientWorkoutPlan(clientId) {
@@ -128,7 +229,7 @@ async function generateWorkoutLogs(clientId, coachId, workoutPlan, subscription,
 
     // Create date range for checking existing logs
     const dayStart = new Date(current);
-    const nextDayStart = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const nextDayStart = new Date(dayStart.getTime() + DAY_MS);
 
     // Check if log already exists for this day
     const existingLog = await ClientWorkoutLog.findOne({
@@ -179,7 +280,7 @@ async function generateWorkoutLogs(clientId, coachId, workoutPlan, subscription,
     }
 
     // Move to next day
-    current.setTime(current.getTime() + 24 * 60 * 60 * 1000);
+    current.setTime(current.getTime() + DAY_MS);
   }
 
   if (logs.length > 0) {
@@ -187,6 +288,80 @@ async function generateWorkoutLogs(clientId, coachId, workoutPlan, subscription,
   }
 
   return logs.length;
+}
+
+async function getClientActiveWorkoutPlans(clientId) {
+  const { subscription, plan } = await getClientWorkoutPlan(clientId);
+
+  if (!subscription || !plan || !plan.workoutPlanIds || plan.workoutPlanIds.length === 0) {
+    return { subscription, plan, workoutPlans: [] };
+  }
+
+  const workoutPlans = await CoachWorkoutPlan.find({
+    _id: { $in: plan.workoutPlanIds },
+    isActive: true,
+  });
+
+  return { subscription, plan, workoutPlans };
+}
+
+async function ensureWorkoutLogsCoverageForClient(clientId, rangeStart, rangeEnd, workoutPlanId) {
+  const { subscription, workoutPlans } = await getClientActiveWorkoutPlans(clientId);
+
+  if (!subscription || !Array.isArray(workoutPlans) || workoutPlans.length === 0) {
+    return 0;
+  }
+
+  const todayIstStart = getISTStartOfDayUtc();
+  const subscriptionStart = getISTStartOfDayUtc(subscription.startDate);
+
+  const requestedStart = rangeStart ? getISTStartOfDayUtc(rangeStart) : subscriptionStart;
+  const requestedEnd = rangeEnd ? getISTStartOfDayUtc(rangeEnd) : todayIstStart;
+
+  const effectiveStart = new Date(Math.max(requestedStart.getTime(), subscriptionStart.getTime()));
+  const effectiveEnd = new Date(Math.min(requestedEnd.getTime(), todayIstStart.getTime()));
+
+  if (effectiveEnd.getTime() < effectiveStart.getTime()) {
+    return 0;
+  }
+
+  const filteredWorkoutPlans = workoutPlanId
+    ? workoutPlans.filter((workoutPlan) => workoutPlan._id.toString() === workoutPlanId.toString())
+    : workoutPlans;
+
+  if (!filteredWorkoutPlans.length) {
+    return 0;
+  }
+
+  let generatedCount = 0;
+
+  for (const workoutPlan of filteredWorkoutPlans) {
+    generatedCount += await generateWorkoutLogs(
+      clientId,
+      subscription.coachId,
+      workoutPlan,
+      subscription,
+      effectiveStart,
+      effectiveEnd
+    );
+  }
+
+  return generatedCount;
+}
+
+async function markClientOverdueWorkoutsAsMissed(clientId, cutoff = getISTStartOfDayUtc()) {
+  const result = await ClientWorkoutLog.updateMany(
+    {
+      clientId,
+      status: { $in: ["scheduled", "in_progress"] },
+      scheduledDate: { $lt: cutoff },
+    },
+    {
+      $set: { status: "missed" },
+    }
+  );
+
+  return result.modifiedCount ?? 0;
 }
 
 // ------------------------------
@@ -288,26 +463,26 @@ export const getTodaysWorkout = asyncHandler(async (req, res) => {
       scheduledDate: { $gte: today, $lt: tomorrow },
     });
 
-    if (!todayLog) {
-      const exerciseLogs = [];
-      if (!scheduleDay.isRestDay && scheduleDay.workouts) {
-        for (const workout of scheduleDay.workouts) {
-          if (workout.exercises) {
-            for (const ex of workout.exercises) {
-              exerciseLogs.push({
-                exerciseId: ex.exerciseId,
-                exerciseName: ex.exerciseName,
-                plannedSets: ex.sets,
-                plannedReps: ex.reps,
-                plannedDuration: ex.duration,
-                completedSets: 0,
-                completed: false,
-              });
-            }
+    const plannedExerciseLogs = [];
+    if (!scheduleDay.isRestDay && scheduleDay.workouts) {
+      for (const workout of scheduleDay.workouts) {
+        if (workout.exercises) {
+          for (const ex of workout.exercises) {
+            plannedExerciseLogs.push({
+              exerciseId: ex.exerciseId,
+              exerciseName: ex.exerciseName,
+              plannedSets: ex.sets,
+              plannedReps: ex.reps,
+              plannedDuration: ex.duration,
+              completedSets: 0,
+              completed: false,
+            });
           }
         }
       }
+    }
 
+    if (!todayLog) {
       todayLog = await ClientWorkoutLog.create({
         clientId: req.user._id,
         coachId: subscription.coachId,
@@ -320,8 +495,62 @@ export const getTodaysWorkout = asyncHandler(async (req, res) => {
         workoutName: scheduleDay.dayName || `Day ${dayNumber}`,
         focusArea: scheduleDay.focusArea,
         status: scheduleDay.isRestDay ? "rest_day" : "scheduled",
-        exerciseLogs,
+        exerciseLogs: plannedExerciseLogs,
       });
+    } else {
+      const wasRestDay = todayLog.status === "rest_day";
+      const shouldBeRestDay = !!scheduleDay.isRestDay;
+      const expectedWorkoutName = scheduleDay.dayName || `Day ${dayNumber}`;
+      const expectedDayNumber = scheduleDay.dayNumber || dayNumber;
+      const expectedFocusArea = scheduleDay.focusArea || undefined;
+
+      let shouldSave = false;
+
+      if (todayLog.dayOfWeek !== dayOfWeek) {
+        todayLog.dayOfWeek = dayOfWeek;
+        shouldSave = true;
+      }
+
+      if (todayLog.dayNumber !== expectedDayNumber) {
+        todayLog.dayNumber = expectedDayNumber;
+        shouldSave = true;
+      }
+
+      if ((todayLog.workoutName || "") !== expectedWorkoutName) {
+        todayLog.workoutName = expectedWorkoutName;
+        shouldSave = true;
+      }
+
+      if ((todayLog.focusArea || "") !== (expectedFocusArea || "")) {
+        todayLog.focusArea = expectedFocusArea;
+        shouldSave = true;
+      }
+
+      if (shouldBeRestDay) {
+        if (todayLog.status !== "rest_day") {
+          todayLog.status = "rest_day";
+          shouldSave = true;
+        }
+
+        if (Array.isArray(todayLog.exerciseLogs) && todayLog.exerciseLogs.length > 0) {
+          todayLog.exerciseLogs = [];
+          shouldSave = true;
+        }
+      } else {
+        if (wasRestDay) {
+          todayLog.status = "scheduled";
+          shouldSave = true;
+        }
+
+        if ((!Array.isArray(todayLog.exerciseLogs) || todayLog.exerciseLogs.length === 0 || wasRestDay) && plannedExerciseLogs.length > 0) {
+          todayLog.exerciseLogs = plannedExerciseLogs;
+          shouldSave = true;
+        }
+      }
+
+      if (shouldSave) {
+        await todayLog.save();
+      }
     }
 
     let exercises = [];
@@ -543,17 +772,7 @@ export const completeWorkout = asyncHandler(async (req, res) => {
 
   // Update exercise logs if provided
   if (value.exerciseLogs && value.exerciseLogs.length > 0) {
-    for (const update of value.exerciseLogs) {
-      const existingLog = log.exerciseLogs.find(
-        (el) =>
-          el.exerciseId?.toString() === update.exerciseId ||
-          el.exerciseName === update.exerciseName
-      );
-
-      if (existingLog) {
-        Object.assign(existingLog, update);
-      }
-    }
+    applyExerciseLogUpdates(log, value.exerciseLogs);
   }
 
   // Update other fields
@@ -598,8 +817,20 @@ export const markWorkoutMissed = asyncHandler(async (req, res) => {
     throw new Error("Cannot mark a rest day as missed");
   }
 
+  if (log.status === "completed" || log.status === "partial") {
+    res.status(400);
+    throw new Error("Cannot mark a completed or partially completed workout as missed");
+  }
+
+  if (log.status === "missed") {
+    res.status(400);
+    throw new Error("Workout is already marked as missed");
+  }
+
   log.status = "missed";
-  if (reason) log.clientNotes = reason;
+  if (typeof reason === "string" && reason.trim()) {
+    log.clientNotes = reason.trim();
+  }
   await log.save();
 
   res.json({
@@ -631,21 +862,13 @@ export const updateWorkoutLog = asyncHandler(async (req, res) => {
     throw new Error("Workout log not found");
   }
 
+  if (value.exerciseLogs && value.exerciseLogs.length > 0) {
+    applyExerciseLogUpdates(log, value.exerciseLogs);
+  }
+
   // Update fields
   Object.keys(value).forEach((key) => {
-    if (key === "exerciseLogs" && value.exerciseLogs) {
-      // Update individual exercise logs
-      for (const update of value.exerciseLogs) {
-        const existingLog = log.exerciseLogs.find(
-          (el) =>
-            el.exerciseId?.toString() === update.exerciseId ||
-            el.exerciseName === update.exerciseName
-        );
-        if (existingLog) {
-          Object.assign(existingLog, update);
-        }
-      }
-    } else {
+    if (key !== "exerciseLogs") {
       log[key] = value[key];
     }
   });
@@ -670,6 +893,32 @@ export const getWorkoutHistory = asyncHandler(async (req, res) => {
   const skip = (page - 1) * limit;
 
   const { status, startDate, endDate, workoutPlanId } = req.query;
+  let startBoundary;
+  let endBoundary;
+
+  if (startDate) {
+    startBoundary = parseDateInputToISTStartUtc(startDate);
+    if (!startBoundary) {
+      res.status(400);
+      throw new Error("Invalid startDate");
+    }
+  }
+
+  if (endDate) {
+    endBoundary = parseDateInputToISTStartUtc(endDate);
+    if (!endBoundary) {
+      res.status(400);
+      throw new Error("Invalid endDate");
+    }
+  }
+
+  if (startBoundary && endBoundary && endBoundary.getTime() < startBoundary.getTime()) {
+    res.status(400);
+    throw new Error("Invalid date range: endDate must be on or after startDate");
+  }
+
+  await ensureWorkoutLogsCoverageForClient(req.user._id, startBoundary, endBoundary, workoutPlanId);
+  await markClientOverdueWorkoutsAsMissed(req.user._id);
 
   const query = { clientId: req.user._id };
 
@@ -681,10 +930,16 @@ export const getWorkoutHistory = asyncHandler(async (req, res) => {
     query.workoutPlanId = workoutPlanId;
   }
 
-  if (startDate || endDate) {
+  if (startBoundary || endBoundary) {
     query.scheduledDate = {};
-    if (startDate) query.scheduledDate.$gte = new Date(startDate);
-    if (endDate) query.scheduledDate.$lte = new Date(endDate);
+
+    if (startBoundary) {
+      query.scheduledDate.$gte = startBoundary;
+    }
+
+    if (endBoundary) {
+      query.scheduledDate.$lt = new Date(endBoundary.getTime() + DAY_MS);
+    }
   }
 
   const [logs, total] = await Promise.all([
@@ -715,15 +970,18 @@ export const getWorkoutHistory = asyncHandler(async (req, res) => {
 // ------------------------------
 export const getWorkoutStats = asyncHandler(async (req, res) => {
   const { period = "30" } = req.query;
-  const days = parseInt(period);
+  const days = Math.max(1, parseInt(period) || 30);
 
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
-  startDate.setHours(0, 0, 0, 0);
+  const todayIstStart = getISTStartOfDayUtc();
+  const tomorrowIstStart = new Date(todayIstStart.getTime() + DAY_MS);
+  const startDate = new Date(todayIstStart.getTime() - days * DAY_MS);
+
+  await ensureWorkoutLogsCoverageForClient(req.user._id, startDate, todayIstStart);
+  await markClientOverdueWorkoutsAsMissed(req.user._id, todayIstStart);
 
   const logs = await ClientWorkoutLog.find({
     clientId: req.user._id,
-    scheduledDate: { $gte: startDate },
+    scheduledDate: { $gte: startDate, $lt: tomorrowIstStart },
     status: { $ne: "rest_day" },
   });
 
@@ -770,49 +1028,46 @@ export const getWorkoutStats = asyncHandler(async (req, res) => {
     .sort((a, b) => b.scheduledDate - a.scheduledDate);
 
   let streak = 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  const yesterday = new Date(today);
+  const today = new Date(todayIstStart);
+
+  const yesterday = new Date(todayIstStart);
   yesterday.setDate(yesterday.getDate() - 1);
-  
-  let checkDate = new Date(today);
 
   // Check if today is completed
   const todayLog = sortedLogs.find((l) => {
-    const logDate = new Date(l.scheduledDate);
-    logDate.setHours(0, 0, 0, 0);
-    return logDate.getTime() === today.getTime();
+    const logDate = getISTStartOfDayUtc(new Date(l.scheduledDate));
+    return logDate.getTime() === todayIstStart.getTime();
   });
   stats.todayCompleted = !!todayLog;
   
   // Check if yesterday is completed
   const yesterdayLog = sortedLogs.find((l) => {
-    const logDate = new Date(l.scheduledDate);
-    logDate.setHours(0, 0, 0, 0);
+    const logDate = getISTStartOfDayUtc(new Date(l.scheduledDate));
     return logDate.getTime() === yesterday.getTime();
   });
   stats.yesterdayCompleted = !!yesterdayLog;
 
-  for (let i = 0; i < 365; i++) {
-    const dayLog = sortedLogs.find((l) => {
-      const logDate = new Date(l.scheduledDate);
-      logDate.setHours(0, 0, 0, 0);
-      return logDate.getTime() === checkDate.getTime();
-    });
+  let checkDate = null;
+  if (stats.todayCompleted) {
+    checkDate = new Date(today);
+  } else if (stats.yesterdayCompleted) {
+    checkDate = new Date(yesterday);
+  }
 
-    if (dayLog) {
-      streak++;
-    } else {
-      // Check if it was a rest day or future
-      if (checkDate > today) {
-        checkDate.setDate(checkDate.getDate() - 1);
-        continue;
+  if (checkDate) {
+    for (let i = 0; i < 365; i++) {
+      const dayLog = sortedLogs.find((l) => {
+        const logDate = getISTStartOfDayUtc(new Date(l.scheduledDate));
+        return logDate.getTime() === checkDate.getTime();
+      });
+
+      if (!dayLog) {
+        break;
       }
-      break;
-    }
 
-    checkDate.setDate(checkDate.getDate() - 1);
+      streak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
   }
 
   stats.streak = streak;
