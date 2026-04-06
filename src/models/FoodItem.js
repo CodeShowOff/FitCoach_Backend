@@ -258,6 +258,8 @@ foodItemSchema.index({ "nutrition.protein": -1 });
 foodItemSchema.index({ usageCount: -1 });
 foodItemSchema.index({ createdAt: -1 });
 foodItemSchema.index({ isCustom: 1, createdBy: 1, isActive: 1 });
+foodItemSchema.index({ dataSource: 1, isActive: 1, isCustom: 1, name: 1 });
+foodItemSchema.index({ dataSource: 1, isVegetarian: 1, "nutrition.protein": -1, "nutrition.calories": 1 });
 
 // Virtual for macros as percentage
 foodItemSchema.virtual("macroPercentages").get(function () {

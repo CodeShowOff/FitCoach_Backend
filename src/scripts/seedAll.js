@@ -13,6 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const scripts = [
   { name: "Exercises", file: "seedExercises.js" },
   { name: "Food Items", file: "seedFoodItems.js" },
+  { name: "Indian Foods", file: "seedIndianFoods.js" },
 ];
 
 async function runScript(scriptPath, name) {

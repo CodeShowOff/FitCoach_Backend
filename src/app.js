@@ -133,6 +133,7 @@ import workoutTemplateRoutes from "./routes/workoutTemplate.routes.js";
 import coachWorkoutPlanRoutes from "./routes/coachWorkoutPlan.routes.js";
 import clientWorkoutRoutes from "./routes/clientWorkout.routes.js";
 import foodItemRoutes from "./routes/foodItem.routes.js";
+import indianFoodRoutes from "./routes/indianFood.routes.js";
 import dietTemplateRoutes from "./routes/dietTemplate.routes.js";
 import coachDietPlanRoutes from "./routes/coachDietPlan.routes.js";
 import clientDietRoutes from "./routes/clientDiet.routes.js";
@@ -172,6 +173,7 @@ app.use("/api/v1/client/workouts", clientWorkoutRoutes);
 
 // Diet Planning Routes
 app.use("/api/v1/food-items", foodItemRoutes);
+app.use("/api/v1/indian-foods", indianFoodRoutes);
 app.use("/api/v1/diet-templates", dietTemplateRoutes);
 app.use("/api/v1/coach/diet-plans", coachDietPlanRoutes);
 app.use("/api/v1/client/diet", clientDietRoutes);
