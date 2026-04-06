@@ -2,6 +2,30 @@ import cron from "node-cron";
 import PlatformSubscription from "../models/PlatformSubscription.js";
 import Notification from "../models/Notification.js";
 import { sendEmail } from "../services/email.service.js";
+import { emitToUser } from "../socket/socketServer.js";
+
+const toIdString = (value) => (value ? value.toString() : null);
+
+const emitCreatedNotifications = (notifications = []) => {
+  notifications.forEach((notification) => {
+    const recipientId = toIdString(notification?.recipientId);
+    if (!recipientId) return;
+
+    emitToUser(recipientId, "notification:new", {
+      notification: {
+        _id: toIdString(notification?._id),
+        recipientId,
+        senderId: toIdString(notification?.senderId),
+        title: notification?.title ?? null,
+        message: notification?.message ?? "",
+        type: notification?.type ?? "info",
+        meta: notification?.meta ?? {},
+        readAt: notification?.readAt ?? null,
+        createdAt: notification?.createdAt ?? new Date().toISOString(),
+      },
+    });
+  });
+};
 
 /**
  * Daily subscription check job
@@ -128,7 +152,8 @@ async function sendThreeDayWarnings() {
 
     // Bulk insert all notifications at once
     if (notificationsToCreate.length > 0) {
-      await Notification.insertMany(notificationsToCreate);
+      const insertedNotifications = await Notification.insertMany(notificationsToCreate);
+      emitCreatedNotifications(insertedNotifications);
       console.log(`✅ Created ${notificationsToCreate.length} notifications in bulk`);
     }
 
@@ -218,7 +243,8 @@ async function sendOneDayWarnings() {
 
     // Bulk insert all notifications at once
     if (notificationsToCreate.length > 0) {
-      await Notification.insertMany(notificationsToCreate);
+      const insertedNotifications = await Notification.insertMany(notificationsToCreate);
+      emitCreatedNotifications(insertedNotifications);
       console.log(`✅ Created ${notificationsToCreate.length} notifications in bulk`);
     }
 
@@ -303,7 +329,8 @@ async function sendExpiryNotifications() {
 
     // Bulk insert all notifications at once
     if (notificationsToCreate.length > 0) {
-      await Notification.insertMany(notificationsToCreate);
+      const insertedNotifications = await Notification.insertMany(notificationsToCreate);
+      emitCreatedNotifications(insertedNotifications);
       console.log(`✅ Created ${notificationsToCreate.length} notifications in bulk`);
     }
 

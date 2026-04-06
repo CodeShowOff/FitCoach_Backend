@@ -2,6 +2,7 @@
 import { Server as SocketIOServer } from "socket.io";
 import { socketAuthMiddleware } from "./socketAuth.js";
 import { registerChatHandlers } from "./chatHandler.js";
+import { getTotalUnreadCount } from "../services/chat.service.js";
 
 let io = null;
 
@@ -41,6 +42,17 @@ export const initializeSocketServer = (httpServer, origins = []) => {
     // If client with a coach, join their coach's client room
     if (socket.user.role === "client" && socket.user.coachId) {
       socket.join(`coach:${socket.user.coachId}:clients`);
+    }
+
+    // Emit initial unread chat count for quick client sync
+    if (socket.user.role === "coach" || socket.user.role === "client") {
+      void getTotalUnreadCount(socket.user._id)
+        .then((count) => {
+          socket.emit("chat:unread-count", { count });
+        })
+        .catch((error) => {
+          console.error("Failed to emit initial chat unread count:", error);
+        });
     }
 
     // Register chat event handlers

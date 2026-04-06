@@ -36,6 +36,80 @@ const paginationSchema = Joi.object({
   after: Joi.date().iso().allow(null),
 });
 
+const emitUnreadCountSnapshot = async (userId) => {
+  try {
+    const { getIO } = await import("../socket/socketServer.js");
+    const io = getIO();
+    if (!io) return;
+
+    const count = await getTotalUnreadCount(userId);
+    io.to(`user:${userId}`).emit("chat:unread-count", { count });
+  } catch (error) {
+    console.error("Failed to emit unread snapshot:", error);
+  }
+};
+
+const getMessagePreview = (message) => {
+  if (!message) return "";
+
+  switch (message.type) {
+    case "text":
+      return message.content?.substring(0, 100) || "";
+    case "image":
+      return message.content ? `📷 ${message.content.substring(0, 90)}` : "📷 Photo";
+    case "link":
+      return message.linkTitle ? `🔗 ${message.linkTitle.substring(0, 90)}` : "🔗 Link";
+    case "system":
+      return message.content?.substring(0, 100) || "System message";
+    default:
+      return "";
+  }
+};
+
+const emitConversationRealtimeUpdates = async ({
+  io,
+  conversation,
+  conversationId,
+  message,
+  senderId,
+  senderName,
+}) => {
+  if (!io) return;
+
+  const messageObject = message?.toObject ? message.toObject() : message;
+
+  const members = await ConversationMember.find({
+    conversationId,
+    userId: { $ne: senderId },
+    isActive: true,
+  }).lean();
+
+  members.forEach((member) => {
+    io.to(`user:${member.userId}`).emit("conversation:update", {
+      conversationId,
+      lastMessageAt: message.createdAt,
+      lastMessagePreview: getMessagePreview(message),
+      lastMessageSenderId: senderId,
+      unreadIncrement: 1,
+    });
+  });
+
+  if (conversation.type === "direct") {
+    const senderIdStr = senderId.toString();
+    const coachId = conversation.coachId?.toString?.() ?? String(conversation.coachId);
+    const clientId = conversation.clientId?.toString?.() ?? String(conversation.clientId || "");
+    const otherUserId = coachId === senderIdStr ? clientId : coachId;
+
+    if (otherUserId) {
+      io.to(`user:${otherUserId}`).emit("message:notification", {
+        conversationId,
+        message: messageObject,
+        senderName,
+      });
+    }
+  }
+};
+
 // ------------------------------
 // 📋 @desc Get all conversations for current user
 // @route GET /api/v1/chat/conversations
@@ -143,6 +217,7 @@ export const getConversationMessages = asyncHandler(async (req, res) => {
 
   // Mark as read when fetching messages
   await markConversationAsRead(conversationId, req.user._id);
+  await emitUnreadCountSnapshot(req.user._id);
 
   res.json({
     success: true,
@@ -214,6 +289,15 @@ export const sendMessage = asyncHandler(async (req, res) => {
     io.to(`conversation:${conversationId}`).emit("message:new", {
       message: message.toObject(),
       conversationId,
+    });
+
+    await emitConversationRealtimeUpdates({
+      io,
+      conversation,
+      conversationId,
+      message,
+      senderId: req.user._id,
+      senderName: req.user.fullName,
     });
   }
 
@@ -302,6 +386,15 @@ export const uploadChatImage = asyncHandler(async (req, res) => {
       message: message.toObject(),
       conversationId,
     });
+
+    await emitConversationRealtimeUpdates({
+      io,
+      conversation,
+      conversationId,
+      message,
+      senderId: req.user._id,
+      senderName: req.user.fullName,
+    });
   }
 
   res.status(201).json({
@@ -326,6 +419,7 @@ export const markAsRead = asyncHandler(async (req, res) => {
   }
 
   await markConversationAsRead(conversationId, req.user._id);
+  await emitUnreadCountSnapshot(req.user._id);
 
   res.json({
     success: true,

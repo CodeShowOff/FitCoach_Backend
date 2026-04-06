@@ -3,6 +3,7 @@ import asyncHandler from "express-async-handler";
 import Joi from "joi";
 import Notification from "../models/Notification.js";
 import User from "../models/User.js";
+import { emitToUser } from "../socket/socketServer.js";
 
 const createSchema = Joi.object({
   title: Joi.string().allow(null, "").max(120),
@@ -16,6 +17,37 @@ const createSchema = Joi.object({
   }).required(),
   meta: Joi.object().optional(),
 });
+
+const toIdString = (value) => (value ? value.toString() : null);
+
+const serializeNotification = (notification) => ({
+  _id: toIdString(notification?._id),
+  recipientId: toIdString(notification?.recipientId),
+  senderId: toIdString(notification?.senderId),
+  title: notification?.title ?? null,
+  message: notification?.message ?? "",
+  type: notification?.type ?? "info",
+  meta: notification?.meta ?? {},
+  readAt: notification?.readAt ?? null,
+  createdAt: notification?.createdAt ?? new Date().toISOString(),
+});
+
+const emitNotificationCreated = (notification) => {
+  const recipientId = toIdString(notification?.recipientId);
+  if (!recipientId) return;
+
+  emitToUser(recipientId, "notification:new", {
+    notification: serializeNotification(notification),
+  });
+};
+
+const emitNotificationUnreadCount = async (recipientId) => {
+  const normalizedRecipientId = toIdString(recipientId);
+  if (!normalizedRecipientId) return;
+
+  const count = await Notification.countDocuments({ recipientId: normalizedRecipientId, readAt: null });
+  emitToUser(normalizedRecipientId, "notification:unread-count", { count });
+};
 
 export const listMyNotifications = asyncHandler(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -52,11 +84,14 @@ export const markAsRead = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Notification not found or already read");
   }
+
+  await emitNotificationUnreadCount(req.user._id);
   res.json({ success: true, data: updated });
 });
 
 export const markAllAsRead = asyncHandler(async (req, res) => {
   const result = await Notification.updateMany({ recipientId: req.user._id, readAt: null }, { $set: { readAt: new Date() } });
+  await emitNotificationUnreadCount(req.user._id);
   res.json({ success: true, updated: result.modifiedCount });
 });
 
@@ -128,15 +163,32 @@ export const createBroadcast = asyncHandler(async (req, res) => {
     meta: meta || {},
   }));
 
-  await Notification.insertMany(docs);
+  const inserted = await Notification.insertMany(docs);
+  inserted.forEach((notification) => emitNotificationCreated(notification));
   res.status(201).json({ success: true, inserted: docs.length });
 });
 
 // Helper to create a single notification (internal use by other controllers)
-export async function createNotification({ recipientId, senderId = null, title = null, message, type = "info", meta = {} }) {
+export async function createNotification({ recipientId, userId = null, senderId = null, title = null, message, type = "info", meta = {} }) {
   try {
-    await Notification.create({ recipientId, senderId, title, message, type, meta });
+    const resolvedRecipientId = recipientId || userId;
+    if (!resolvedRecipientId) {
+      throw new Error("recipientId is required");
+    }
+
+    const notification = await Notification.create({
+      recipientId: resolvedRecipientId,
+      senderId,
+      title,
+      message,
+      type,
+      meta,
+    });
+
+    emitNotificationCreated(notification);
+    return notification;
   } catch (e) {
     console.error("Failed to create notification:", e.message);
+    return null;
   }
 }

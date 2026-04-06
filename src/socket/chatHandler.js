@@ -9,6 +9,7 @@ import {
   markConversationAsRead,
   deleteMessage,
   editMessage,
+  getTotalUnreadCount,
 } from "../services/chat.service.js";
 import ConversationMember from "../models/ConversationMember.js";
 
@@ -18,6 +19,15 @@ import ConversationMember from "../models/ConversationMember.js";
 export const registerChatHandlers = (io, socket) => {
   const userId = socket.user._id;
   const userRole = socket.user.role;
+
+  const emitUnreadCount = async (targetUserId = userId) => {
+    try {
+      const count = await getTotalUnreadCount(targetUserId);
+      io.to(`user:${targetUserId}`).emit("chat:unread-count", { count });
+    } catch (error) {
+      console.error("Error emitting unread count:", error);
+    }
+  };
 
   /**
    * Join a conversation room
@@ -43,6 +53,7 @@ export const registerChatHandlers = (io, socket) => {
 
       // Mark as read when joining
       await markConversationAsRead(conversationId, userId);
+      await emitUnreadCount(userId);
 
       console.log(`👤 ${socket.user.fullName} joined conversation:${conversationId}`);
 
@@ -242,6 +253,7 @@ export const registerChatHandlers = (io, socket) => {
       }
 
       await markConversationAsRead(conversationId, userId);
+      await emitUnreadCount(userId);
 
       callback?.({ success: true });
     } catch (error) {
