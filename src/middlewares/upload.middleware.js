@@ -19,12 +19,12 @@ const upload = multer({
   },
 });
 
-// Document upload middleware - supports PDFs and images up to 10MB
+// Document upload middleware - supports PDFs and images up to 2MB
 // Used for client health documents (bills, reports, etc.)
 const documentUpload = multer({
   storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10 MB max for documents
+    fileSize: 2 * 1024 * 1024, // 2 MB max for documents
   },
   fileFilter: (req, file, cb) => {
     const allowed = [

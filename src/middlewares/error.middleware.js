@@ -8,7 +8,7 @@ export const notFound = (req, res, next) => {
 };
 
 // Helper to get user-friendly error message
-const getUserFriendlyMessage = (err) => {
+const getUserFriendlyMessage = (err, req) => {
   // MongoDB connection errors
   if (err.name === 'MongoNetworkError' || err.name === 'MongoTimeoutError') {
     return 'Unable to connect to the database. Please try again later.';
@@ -50,6 +50,9 @@ const getUserFriendlyMessage = (err) => {
 
   // File upload errors
   if (err.code === 'LIMIT_FILE_SIZE') {
+    if (/\/api\/v1\/documents(?:\/|$)/.test(req?.originalUrl || '')) {
+      return 'Document file size must be 2MB or less.';
+    }
     return 'File size is too large. Please upload a smaller file.';
   }
   if (err.code === 'LIMIT_UNEXPECTED_FILE') {
@@ -95,7 +98,7 @@ export const errorHandler = (err, req, res, next) => {
   }
 
   // Get user-friendly message
-  const userMessage = getUserFriendlyMessage(err);
+  const userMessage = getUserFriendlyMessage(err, req);
 
   // Structure of error response
   res.status(statusCode).json({
