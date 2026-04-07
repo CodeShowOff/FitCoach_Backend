@@ -29,7 +29,6 @@ const exerciseSchema = Joi.object({
   exerciseName: Joi.string().max(100).optional(),
   exerciseAnimationUrl: Joi.string().uri().optional().allow("", null),
   order: Joi.number().min(1).required(),
-  sets: Joi.number().min(1).max(20).default(3),
   reps: Joi.number().min(1).max(100).optional(),
   duration: Joi.number().min(1).max(3600).optional(),
   restSeconds: Joi.number().min(0).max(600).default(20),
@@ -470,9 +469,14 @@ export const createFromTemplate = asyncHandler(async (req, res) => {
         {
           name: day.dayName || "Workout",
           estimatedDuration: day.estimatedDuration,
-          exercises: day.exercises.map((ex) => ({
-            ...ex,
+          exercises: (day.exercises || []).map((ex) => ({
             exerciseId: ex.exerciseId.toString(), // Convert ObjectId to string
+            order: ex.order,
+            reps: ex.reps,
+            duration: ex.duration,
+            weight: ex.weight,
+            restSeconds: ex.restSeconds,
+            notes: ex.notes,
           })),
         },
       ],

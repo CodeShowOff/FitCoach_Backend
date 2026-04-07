@@ -143,13 +143,6 @@ const exerciseSchema = new mongoose.Schema(
       min: 0,
       max: 100,
     },
-    // Default sets
-    defaultSets: {
-      type: Number,
-      min: 1,
-      max: 10,
-      default: 3,
-    },
     // Whether this is a timed exercise (vs rep-based)
     isTimeBased: {
       type: Boolean,

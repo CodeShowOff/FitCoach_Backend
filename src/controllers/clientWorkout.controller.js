@@ -52,7 +52,6 @@ const exerciseLogSchema = Joi.object({
   exerciseIndex: Joi.number().integer().min(0).optional(),
   exerciseId: Joi.string().optional(),
   exerciseName: Joi.string().max(100).optional(),
-  completedSets: Joi.number().min(0).max(20).optional(),
   actualReps: Joi.array().items(Joi.number().min(0).max(200)).optional(),
   weightUsed: Joi.array().items(Joi.number().min(0).max(1000)).optional(),
   actualDuration: Joi.number().min(0).max(7200).optional(),
@@ -265,10 +264,8 @@ async function generateWorkoutLogs(clientId, coachId, workoutPlan, subscription,
               log.exerciseLogs.push({
                 exerciseId: ex.exerciseId,
                 exerciseName: ex.exerciseName,
-                plannedSets: ex.sets,
                 plannedReps: ex.reps,
                 plannedDuration: ex.duration,
-                completedSets: 0,
                 completed: false,
               });
             }
@@ -471,10 +468,8 @@ export const getTodaysWorkout = asyncHandler(async (req, res) => {
             plannedExerciseLogs.push({
               exerciseId: ex.exerciseId,
               exerciseName: ex.exerciseName,
-              plannedSets: ex.sets,
               plannedReps: ex.reps,
               plannedDuration: ex.duration,
-              completedSets: 0,
               completed: false,
             });
           }
@@ -562,7 +557,6 @@ export const getTodaysWorkout = asyncHandler(async (req, res) => {
               _id: ex._id,
               exerciseId: ex.exerciseId,
               exerciseName: ex.exerciseName,
-              sets: ex.sets,
               reps: ex.reps,
               duration: ex.duration,
               restSeconds: ex.restSeconds,

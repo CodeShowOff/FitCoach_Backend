@@ -29,12 +29,6 @@ const planExerciseSchema = new mongoose.Schema(
       required: true,
       min: 1,
     },
-    sets: {
-      type: Number,
-      default: 3,
-      min: 1,
-      max: 20,
-    },
     reps: {
       type: Number,
       min: 1,
@@ -90,6 +84,10 @@ const workoutSessionSchema = new mongoose.Schema(
 );
 
 // Sub-schema for a workout day
+// NOTE FOR CONTRIBUTORS:
+// Backend supports multiple sessions per day through `workouts: [workoutSessionSchema]`.
+// Current coach plan UI still edits a single session per day, so multi-session editing
+// is not fully exposed in the frontend yet.
 const workoutDaySchema = new mongoose.Schema(
   {
     dayOfWeek: {
@@ -121,6 +119,7 @@ const workoutDaySchema = new mongoose.Schema(
       trim: true,
       maxlength: 100,
     },
+    // Multiple sessions per day are supported at the data-model level.
     workouts: [workoutSessionSchema],
   },
   { _id: true }

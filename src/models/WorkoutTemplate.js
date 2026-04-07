@@ -19,12 +19,6 @@ const templateExerciseSchema = new mongoose.Schema(
       required: true,
       min: 1,
     },
-    sets: {
-      type: Number,
-      default: 3,
-      min: 1,
-      max: 20,
-    },
     reps: {
       type: Number,
       min: 1,
@@ -34,6 +28,11 @@ const templateExerciseSchema = new mongoose.Schema(
       type: Number, // seconds (for timed exercises)
       min: 1,
       max: 3600,
+    },
+    weight: {
+      type: String, // Can be "bodyweight", "10kg", "moderate", etc.
+      trim: true,
+      maxlength: 50,
     },
     restSeconds: {
       type: Number,
@@ -51,6 +50,10 @@ const templateExerciseSchema = new mongoose.Schema(
 );
 
 // Sub-schema for a single workout day
+// NOTE FOR CONTRIBUTORS:
+// Template model does NOT support multiple sessions per day yet.
+// It stores exercises directly on each day, and during template -> coach-plan conversion
+// backend creates one workout session per day from this structure.
 const workoutDaySchema = new mongoose.Schema(
   {
     dayNumber: {
@@ -78,6 +81,7 @@ const workoutDaySchema = new mongoose.Schema(
       min: 0,
       max: 300,
     },
+    // Single-session-per-day representation (session-less template day).
     exercises: [templateExerciseSchema],
   },
   { _id: true }

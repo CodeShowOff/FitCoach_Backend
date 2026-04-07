@@ -26,9 +26,9 @@ const difficultyEnum = ["beginner", "intermediate", "advanced"];
 const exerciseInTemplateSchema = Joi.object({
   exerciseId: Joi.string().required(),
   order: Joi.number().min(1).required(),
-  sets: Joi.number().min(1).max(20).default(3),
   reps: Joi.number().min(1).max(100).optional(),
   duration: Joi.number().min(1).max(3600).optional(),
+  weight: Joi.string().max(50).optional().allow("", null),
   restSeconds: Joi.number().min(0).max(600).default(20),
   notes: Joi.string().max(300).optional().allow("", null),
 });

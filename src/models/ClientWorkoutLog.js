@@ -18,12 +18,6 @@ const exerciseLogSchema = new mongoose.Schema(
       trim: true,
       maxlength: 100,
     },
-    // Planned prescription
-    plannedSets: {
-      type: Number,
-      min: 1,
-      max: 20,
-    },
     plannedReps: {
       type: Number,
       min: 1,
@@ -35,13 +29,7 @@ const exerciseLogSchema = new mongoose.Schema(
       max: 3600,
     },
     // Actual completion
-    completedSets: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 20,
-    },
-    // Actual reps per set
+    // Actual reps logged by client
     actualReps: [
       {
         type: Number,
@@ -49,7 +37,7 @@ const exerciseLogSchema = new mongoose.Schema(
         max: 200,
       },
     ],
-    // Weight used per set (in kg or lbs based on user preference)
+    // Weight used (in kg or lbs based on user preference)
     weightUsed: [
       {
         type: Number,
@@ -179,14 +167,6 @@ const clientWorkoutLogSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    totalSets: {
-      type: Number,
-      default: 0,
-    },
-    completedSets: {
-      type: Number,
-      default: 0,
-    },
     // Workout duration in minutes
     actualDuration: {
       type: Number,
@@ -258,8 +238,9 @@ clientWorkoutLogSchema.pre("save", function (next) {
   if (this.exerciseLogs && this.exerciseLogs.length > 0) {
     this.totalExercises = this.exerciseLogs.length;
     this.completedExercises = this.exerciseLogs.filter((e) => e.completed).length;
-    this.totalSets = this.exerciseLogs.reduce((sum, e) => sum + (e.plannedSets || 0), 0);
-    this.completedSets = this.exerciseLogs.reduce((sum, e) => sum + (e.completedSets || 0), 0);
+  } else {
+    this.totalExercises = 0;
+    this.completedExercises = 0;
   }
   next();
 });
