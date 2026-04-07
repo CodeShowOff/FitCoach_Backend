@@ -361,6 +361,16 @@ async function markClientOverdueWorkoutsAsMissed(clientId, cutoff = getISTStartO
   return result.modifiedCount ?? 0;
 }
 
+async function ensureCoachOwnsClient(coachId, clientId) {
+  const client = await User.findOne({
+    _id: clientId,
+    coachId,
+    role: "client",
+  }).select("_id");
+
+  return client;
+}
+
 // ------------------------------
 // 📋 @desc Get client's assigned workout plan
 // @route GET /api/v1/client/workouts/plan
@@ -1035,6 +1045,216 @@ export const getWorkoutStats = asyncHandler(async (req, res) => {
   stats.todayCompleted = !!todayLog;
   
   // Check if yesterday is completed
+  const yesterdayLog = sortedLogs.find((l) => {
+    const logDate = getISTStartOfDayUtc(new Date(l.scheduledDate));
+    return logDate.getTime() === yesterday.getTime();
+  });
+  stats.yesterdayCompleted = !!yesterdayLog;
+
+  let checkDate = null;
+  if (stats.todayCompleted) {
+    checkDate = new Date(today);
+  } else if (stats.yesterdayCompleted) {
+    checkDate = new Date(yesterday);
+  }
+
+  if (checkDate) {
+    for (let i = 0; i < 365; i++) {
+      const dayLog = sortedLogs.find((l) => {
+        const logDate = getISTStartOfDayUtc(new Date(l.scheduledDate));
+        return logDate.getTime() === checkDate.getTime();
+      });
+
+      if (!dayLog) {
+        break;
+      }
+
+      streak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+  }
+
+  stats.streak = streak;
+
+  res.json({
+    success: true,
+    data: stats,
+  });
+});
+
+// ------------------------------
+// 📊 @desc Get client workout history (Coach view)
+// @route GET /api/v1/client/workouts/coach/clients/:clientId/history
+// @access Private (Coach only)
+// ------------------------------
+export const getWorkoutHistoryForCoach = asyncHandler(async (req, res) => {
+  const { clientId } = req.params;
+  const client = await ensureCoachOwnsClient(req.user._id, clientId);
+
+  if (!client) {
+    res.status(404);
+    throw new Error("Client not found under this coach");
+  }
+
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(100, parseInt(req.query.limit) || 20);
+  const skip = (page - 1) * limit;
+
+  const { status, startDate, endDate, workoutPlanId } = req.query;
+  let startBoundary;
+  let endBoundary;
+
+  if (startDate) {
+    startBoundary = parseDateInputToISTStartUtc(startDate);
+    if (!startBoundary) {
+      res.status(400);
+      throw new Error("Invalid startDate");
+    }
+  }
+
+  if (endDate) {
+    endBoundary = parseDateInputToISTStartUtc(endDate);
+    if (!endBoundary) {
+      res.status(400);
+      throw new Error("Invalid endDate");
+    }
+  }
+
+  if (startBoundary && endBoundary && endBoundary.getTime() < startBoundary.getTime()) {
+    res.status(400);
+    throw new Error("Invalid date range: endDate must be on or after startDate");
+  }
+
+  await ensureWorkoutLogsCoverageForClient(clientId, startBoundary, endBoundary, workoutPlanId);
+  await markClientOverdueWorkoutsAsMissed(clientId);
+
+  const query = {
+    clientId,
+    coachId: req.user._id,
+  };
+
+  if (status) {
+    query.status = status;
+  }
+
+  if (workoutPlanId) {
+    query.workoutPlanId = workoutPlanId;
+  }
+
+  if (startBoundary || endBoundary) {
+    query.scheduledDate = {};
+
+    if (startBoundary) {
+      query.scheduledDate.$gte = startBoundary;
+    }
+
+    if (endBoundary) {
+      query.scheduledDate.$lt = new Date(endBoundary.getTime() + DAY_MS);
+    }
+  }
+
+  const [logs, total] = await Promise.all([
+    ClientWorkoutLog.find(query)
+      .populate("workoutPlanId", "name")
+      .skip(skip)
+      .limit(limit)
+      .sort({ scheduledDate: -1 }),
+    ClientWorkoutLog.countDocuments(query),
+  ]);
+
+  res.json({
+    success: true,
+    data: logs,
+    pagination: {
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      limit,
+    },
+  });
+});
+
+// ------------------------------
+// 📈 @desc Get client workout statistics (Coach view)
+// @route GET /api/v1/client/workouts/coach/clients/:clientId/stats
+// @access Private (Coach only)
+// ------------------------------
+export const getWorkoutStatsForCoach = asyncHandler(async (req, res) => {
+  const { clientId } = req.params;
+  const client = await ensureCoachOwnsClient(req.user._id, clientId);
+
+  if (!client) {
+    res.status(404);
+    throw new Error("Client not found under this coach");
+  }
+
+  const { period = "30" } = req.query;
+  const days = Math.max(1, parseInt(period) || 30);
+
+  const todayIstStart = getISTStartOfDayUtc();
+  const tomorrowIstStart = new Date(todayIstStart.getTime() + DAY_MS);
+  const startDate = new Date(todayIstStart.getTime() - days * DAY_MS);
+
+  await ensureWorkoutLogsCoverageForClient(clientId, startDate, todayIstStart);
+  await markClientOverdueWorkoutsAsMissed(clientId, todayIstStart);
+
+  const logs = await ClientWorkoutLog.find({
+    clientId,
+    coachId: req.user._id,
+    scheduledDate: { $gte: startDate, $lt: tomorrowIstStart },
+    status: { $ne: "rest_day" },
+  });
+
+  const stats = {
+    totalWorkouts: logs.length,
+    completed: logs.filter((l) => l.status === "completed").length,
+    partial: logs.filter((l) => l.status === "partial").length,
+    missed: logs.filter((l) => l.status === "missed").length,
+    scheduled: logs.filter((l) => l.status === "scheduled").length,
+    completionRate: 0,
+    totalDuration: 0,
+    totalCaloriesBurned: 0,
+    averageDifficulty: 0,
+    streak: 0,
+    todayCompleted: false,
+    yesterdayCompleted: false,
+  };
+
+  const completedOrPartial = stats.completed + stats.partial;
+  const attemptedOrMissed = completedOrPartial + stats.missed;
+  if (attemptedOrMissed > 0) {
+    stats.completionRate = Math.round((completedOrPartial / attemptedOrMissed) * 100);
+  }
+
+  stats.totalDuration = logs.reduce((sum, l) => sum + (l.actualDuration || 0), 0);
+  stats.totalCaloriesBurned = logs.reduce((sum, l) => sum + (l.caloriesBurned || 0), 0);
+
+  const logsWithDifficulty = logs.filter((l) => l.overallDifficulty);
+  if (logsWithDifficulty.length > 0) {
+    stats.averageDifficulty =
+      Math.round(
+        (logsWithDifficulty.reduce((sum, l) => sum + l.overallDifficulty, 0) /
+          logsWithDifficulty.length) *
+          10
+      ) / 10;
+  }
+
+  const sortedLogs = logs
+    .filter((l) => l.status === "completed" || l.status === "partial")
+    .sort((a, b) => b.scheduledDate - a.scheduledDate);
+
+  let streak = 0;
+  const today = new Date(todayIstStart);
+
+  const yesterday = new Date(todayIstStart);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const todayLog = sortedLogs.find((l) => {
+    const logDate = getISTStartOfDayUtc(new Date(l.scheduledDate));
+    return logDate.getTime() === todayIstStart.getTime();
+  });
+  stats.todayCompleted = !!todayLog;
+
   const yesterdayLog = sortedLogs.find((l) => {
     const logDate = getISTStartOfDayUtc(new Date(l.scheduledDate));
     return logDate.getTime() === yesterday.getTime();
