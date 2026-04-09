@@ -5,6 +5,8 @@ import upload from "../middlewares/upload.middleware.js";
 import { uploadProductImage } from "../controllers/products.controller.js";
 import {
   createProduct,
+  createProductFromTemplate,
+  createProductsFromTemplatesBulk,
   getProducts,
   getProductById,
   updateProduct,
@@ -24,6 +26,28 @@ const router = express.Router();
 // @desc    Create a new product
 // @access  Private (Coach only)
 router.post("/", protect, authorizeRoles("coach"), checkCoachSubscription, createProduct);
+
+// @route   POST /api/v1/products/from-template/:templateId
+// @desc    Create a new product from an admin product template
+// @access  Private (Coach only)
+router.post(
+  "/from-templates/bulk",
+  protect,
+  authorizeRoles("coach"),
+  checkCoachSubscription,
+  createProductsFromTemplatesBulk
+);
+
+// @route   POST /api/v1/products/from-template/:templateId
+// @desc    Create a new product from an admin product template
+// @access  Private (Coach only)
+router.post(
+  "/from-template/:templateId",
+  protect,
+  authorizeRoles("coach"),
+  checkCoachSubscription,
+  createProductFromTemplate
+);
 
 // @route   PUT /api/v1/products/:id
 // @desc    Update an existing product

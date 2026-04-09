@@ -10,6 +10,12 @@ const productSchema = new mongoose.Schema(
       required: [true, "Coach ID is required"],
       index: true,
     },
+    templateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProductTemplate",
+      default: null,
+      index: true,
+    },
     name: {
       type: String,
       required: [true, "Product name is required"],

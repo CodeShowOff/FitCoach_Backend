@@ -3,6 +3,7 @@
 import asyncHandler from "express-async-handler";
 import Joi from "joi";
 import Product from "../models/Product.js";
+import ProductTemplate from "../models/ProductTemplate.js";
 import cloudinary from "../config/cloudinary.js";
 import streamifier from "streamifier";
 
@@ -29,6 +30,56 @@ const updateProductSchema = Joi.object({
   isActive: Joi.boolean().optional(),
 });
 
+const createFromTemplateSchema = Joi.object({
+  name: Joi.string().min(2).max(100).optional(),
+  description: Joi.string().max(1000).optional().allow("", null),
+  mrp: Joi.number().min(0).optional(),
+  price: Joi.number().min(0).optional(),
+  category: Joi.string().max(50).optional().allow("", null),
+  imageUrl: Joi.string().uri().optional().allow("", null),
+  isActive: Joi.boolean().optional(),
+  allowDuplicate: Joi.boolean().default(false),
+});
+
+const createFromTemplatesBulkSchema = Joi.object({
+  templateIds: Joi.array()
+    .items(Joi.string().trim().length(24).hex().required())
+    .min(1)
+    .max(100)
+    .required(),
+  allowDuplicate: Joi.boolean().default(false),
+});
+
+const deriveProductDataFromTemplate = (template, overrides = {}) => {
+  const name = overrides.name || template.name;
+  const description =
+    overrides.description !== undefined
+      ? overrides.description || undefined
+      : template.description;
+  const mrp = overrides.mrp ?? template.mrp;
+  const price = overrides.price ?? template.price;
+  const category =
+    overrides.category !== undefined
+      ? overrides.category || undefined
+      : template.category;
+  const imageUrl =
+    overrides.imageUrl !== undefined
+      ? overrides.imageUrl || undefined
+      : template.imageUrl;
+
+  return {
+    name,
+    description,
+    mrp,
+    price,
+    category,
+    imageUrl,
+    imagePublicId:
+      overrides.imageUrl !== undefined ? null : template.imagePublicId || null,
+    isActive: overrides.isActive ?? true,
+  };
+};
+
 // ------------------------------
 // ➕ @desc Create a new product
 // @route POST /api/v1/products
@@ -41,6 +92,11 @@ export const createProduct = asyncHandler(async (req, res) => {
     throw new Error(error.details[0].message);
   }
 
+  if (value.price > value.mrp) {
+    res.status(400);
+    throw new Error("Product price cannot exceed product MRP");
+  }
+
   const product = await Product.create({
     coachId: req.user._id,
     ...value,
@@ -50,6 +106,167 @@ export const createProduct = asyncHandler(async (req, res) => {
     success: true,
     message: "Product created successfully",
     data: product,
+  });
+});
+
+// ------------------------------
+// 📥 @desc Create a coach product from product template
+// @route POST /api/v1/products/from-template/:templateId
+// @access Private (Coach only)
+// ------------------------------
+export const createProductFromTemplate = asyncHandler(async (req, res) => {
+  const { error, value } = createFromTemplateSchema.validate(req.body);
+  if (error) {
+    res.status(400);
+    throw new Error(error.details[0].message);
+  }
+
+  const template = await ProductTemplate.findOne({
+    _id: req.params.templateId,
+    isActive: true,
+  });
+
+  if (!template) {
+    res.status(404);
+    throw new Error("Product template not found");
+  }
+
+  const productData = deriveProductDataFromTemplate(template, value);
+
+  if (productData.price > productData.mrp) {
+    res.status(400);
+    throw new Error("Product price cannot exceed product MRP");
+  }
+
+  if (!value.allowDuplicate) {
+    const existing = await Product.findOne({
+      coachId: req.user._id,
+      templateId: template._id,
+      name: productData.name,
+      isActive: true,
+    }).select("_id");
+
+    if (existing) {
+      res.status(409);
+      throw new Error("You already adopted this template with the same product name");
+    }
+  }
+
+  const product = await Product.create({
+    coachId: req.user._id,
+    templateId: template._id,
+    ...productData,
+  });
+
+  await ProductTemplate.findByIdAndUpdate(template._id, {
+    $inc: { usageCount: 1 },
+  });
+
+  res.status(201).json({
+    success: true,
+    message: "Product created from template successfully",
+    data: product,
+  });
+});
+
+// ------------------------------
+// 📥 @desc Create multiple coach products from product templates
+// @route POST /api/v1/products/from-templates/bulk
+// @access Private (Coach only)
+// ------------------------------
+export const createProductsFromTemplatesBulk = asyncHandler(async (req, res) => {
+  const { error, value } = createFromTemplatesBulkSchema.validate(req.body);
+  if (error) {
+    res.status(400);
+    throw new Error(error.details[0].message);
+  }
+
+  const templateIds = [...new Set(value.templateIds.map((id) => id.trim()))];
+
+  const templates = await ProductTemplate.find({
+    _id: { $in: templateIds },
+    isActive: true,
+  });
+
+  const templateMap = new Map(templates.map((template) => [template._id.toString(), template]));
+
+  const createdProducts = [];
+  const skipped = [];
+
+  for (const templateId of templateIds) {
+    const template = templateMap.get(templateId);
+
+    if (!template) {
+      skipped.push({
+        templateId,
+        reason: "Product template not found or inactive",
+      });
+      continue;
+    }
+
+    const productData = deriveProductDataFromTemplate(template);
+
+    if (productData.price > productData.mrp) {
+      skipped.push({
+        templateId,
+        templateName: template.name,
+        reason: "Template price cannot exceed template MRP",
+      });
+      continue;
+    }
+
+    if (!value.allowDuplicate) {
+      const existing = await Product.findOne({
+        coachId: req.user._id,
+        templateId: template._id,
+        name: productData.name,
+        isActive: true,
+      }).select("_id");
+
+      if (existing) {
+        skipped.push({
+          templateId,
+          templateName: template.name,
+          reason: "Template already adopted with the same product name",
+        });
+        continue;
+      }
+    }
+
+    const product = await Product.create({
+      coachId: req.user._id,
+      templateId: template._id,
+      ...productData,
+    });
+
+    createdProducts.push(product);
+  }
+
+  if (createdProducts.length > 0) {
+    const usageOps = createdProducts.map((product) => ({
+      updateOne: {
+        filter: { _id: product.templateId },
+        update: { $inc: { usageCount: 1 } },
+      },
+    }));
+
+    await ProductTemplate.bulkWrite(usageOps);
+  }
+
+  res.status(createdProducts.length > 0 ? 201 : 200).json({
+    success: true,
+    message:
+      createdProducts.length > 0
+        ? `Created ${createdProducts.length} product${createdProducts.length > 1 ? "s" : ""}${
+            skipped.length > 0 ? `, skipped ${skipped.length}` : ""
+          }`
+        : `No products created${skipped.length > 0 ? `, skipped ${skipped.length}` : ""}`,
+    data: {
+      createdProducts,
+      createdCount: createdProducts.length,
+      skipped,
+      skippedCount: skipped.length,
+    },
   });
 });
 
@@ -178,6 +395,13 @@ export const updateProduct = asyncHandler(async (req, res) => {
   if (product.coachId.toString() !== req.user._id.toString()) {
     res.status(403);
     throw new Error("Access denied — cannot modify another coach’s product");
+  }
+
+  const nextMrp = value.mrp ?? product.mrp;
+  const nextPrice = value.price ?? product.price;
+  if (nextPrice > nextMrp) {
+    res.status(400);
+    throw new Error("Product price cannot exceed product MRP");
   }
 
   Object.assign(product, value);
