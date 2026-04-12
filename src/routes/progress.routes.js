@@ -3,6 +3,7 @@
 import express from "express";
 import {
   addProgressLog,
+  getMyProgressSummary,
   getMyProgressLogs,
   getClientProgressLogs,
   getGoalWeight,
@@ -25,6 +26,11 @@ router.post("/", protect, authorizeRoles("client"), addProgressLog);
 // @desc    Get logged-in client's progress logs (paginated)
 // @access  Private (Client only)
 router.get("/my", protect, authorizeRoles("client"), getMyProgressLogs);
+
+// @route   GET /api/v1/progress/my/summary
+// @desc    Get lightweight summary metrics for dashboard
+// @access  Private (Client only)
+router.get("/my/summary", protect, authorizeRoles("client"), getMyProgressSummary);
 
 // @route   GET /api/v1/progress/goal-weight
 // @desc    Get client's goal weight

@@ -27,6 +27,25 @@ const calculateAge = (dateOfBirth) => {
   return age;
 };
 
+const getLatestHistoryValue = (history = []) => {
+  let latestValue = null;
+  let latestTimestamp = Number.NEGATIVE_INFINITY;
+
+  for (const entry of history) {
+    const value = entry?.value;
+    if (value !== undefined && value !== null) {
+      const timestamp = entry?.date ? new Date(entry.date).getTime() : Number.NEGATIVE_INFINITY;
+
+      if (timestamp >= latestTimestamp) {
+        latestTimestamp = timestamp;
+        latestValue = value;
+      }
+    }
+  }
+
+  return latestValue;
+};
+
 // ------------------------------
 // 🧩 Validation Schema
 // ------------------------------
@@ -434,6 +453,32 @@ export const getMyProgressLogs = asyncHandler(async (req, res) => {
       total: history.length,
       page: 1,
       totalPages: 1,
+    },
+  });
+});
+
+// ------------------------------
+// 📈 @desc Get lightweight progress summary for dashboard
+// @route GET /api/v1/progress/my/summary
+// @access Private (Client)
+// ------------------------------
+export const getMyProgressSummary = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id).select(
+    "weightHistory bmiHistory bloodPressureSystolicHistory bloodPressureDiastolicHistory"
+  );
+
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+
+  res.json({
+    success: true,
+    data: {
+      latestWeight: getLatestHistoryValue(user.weightHistory),
+      latestBMI: getLatestHistoryValue(user.bmiHistory),
+      bloodPressureSystolic: getLatestHistoryValue(user.bloodPressureSystolicHistory),
+      bloodPressureDiastolic: getLatestHistoryValue(user.bloodPressureDiastolicHistory),
     },
   });
 });
