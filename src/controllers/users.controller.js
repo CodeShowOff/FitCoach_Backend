@@ -31,8 +31,12 @@ const socialMediaSchema = Joi.object({
   website: Joi.string().uri().max(200).allow(null, "").optional(),
 }).unknown(false).optional();
 
+const phonePattern = /^\+?[0-9()\-\s]{7,30}$/;
+
 const updateProfileSchema = Joi.object({
-  fullName: Joi.string().min(3).max(100),
+  fullName: Joi.string().trim().min(3).max(100),
+  phone: Joi.string().trim().pattern(phonePattern).max(30).allow(null, ""),
+  whatsappNumber: Joi.string().trim().pattern(phonePattern).max(30).allow(null, ""),
   specialization: Joi.string().max(100),
   experienceYears: Joi.number().min(0).max(50),
   description: Joi.string().max(1000).allow(null, ""),
@@ -133,7 +137,17 @@ export const updateProfile = asyncHandler(async (req, res) => {
     throw new Error("User not found");
   }
 
-  Object.assign(user, value);
+  const payload = { ...value };
+
+  if (Object.prototype.hasOwnProperty.call(payload, "phone")) {
+    payload.phone = payload.phone ? payload.phone.trim() : null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, "whatsappNumber")) {
+    payload.whatsappNumber = payload.whatsappNumber ? payload.whatsappNumber.trim() : null;
+  }
+
+  Object.assign(user, payload);
   const updatedUser = await user.save();
 
   res.json({
