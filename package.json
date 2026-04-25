@@ -15,6 +15,7 @@
     "seed:exercises": "node src/scripts/seedExercises.js",
     "seed:food": "node src/scripts/seedFoodItems.js",
     "seed:indian-foods": "node src/scripts/seedIndianFoods.js",
+    "seed:demo": "node src/scripts/seedDemoData.js",
     "seed:all": "node src/scripts/seedExercises.js && node src/scripts/seedFoodItems.js && node src/scripts/seedIndianFoods.js",
     "expire-subscriptions": "node src/jobs/subscriptions.job.js",
     "lint": "eslint . --ext .js",

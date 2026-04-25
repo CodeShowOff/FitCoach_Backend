@@ -121,7 +121,7 @@ async function sendThreeDayWarnings() {
           recipientId: user._id,
           type: "subscription_warning",
           title: `${subscription.status === "trial" ? "Trial" : "Subscription"} Expiring Soon`,
-          message: `Your ${subscription.status === "trial" ? "free trial" : "subscription"} will expire in ${daysRemaining} day${daysRemaining !== 1 ? "s" : ""}. Pay ₹99 to continue using FitCoach.`,
+          message: `Your ${subscription.status === "trial" ? "free trial" : "subscription"} will expire in ${daysRemaining} day${daysRemaining !== 1 ? "s" : ""}. Pay ₹199 to continue using FitCoach.`,
           priority: "high",
         });
 
@@ -137,7 +137,7 @@ async function sendThreeDayWarnings() {
               <h2>Your ${subscription.status === "trial" ? "Free Trial" : "Subscription"} is Expiring Soon</h2>
               <p>Hi ${user.fullName},</p>
               <p>Your FitCoach ${subscription.status === "trial" ? "free trial" : "subscription"} will expire in <strong>${daysRemaining} day${daysRemaining !== 1 ? "s" : ""}</strong>.</p>
-              <p>To continue accessing the platform without interruption, please make a payment of <strong>₹99</strong>.</p>
+              <p>To continue accessing the platform without interruption, please make a payment of <strong>₹199</strong>.</p>
               <p><a href="${process.env.FRONTEND_URL}/coach/platform-subscription" style="display: inline-block; padding: 12px 24px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Pay Now</a></p>
               <p>Thank you for using FitCoach!</p>
             `,
@@ -211,7 +211,7 @@ async function sendOneDayWarnings() {
           recipientId: user._id,
           type: "subscription_warning",
           title: `${subscription.status === "trial" ? "Trial" : "Subscription"} Expires Tomorrow`,
-          message: `Your ${subscription.status === "trial" ? "free trial" : "subscription"} expires tomorrow! Pay ₹99 now to avoid service interruption.`,
+          message: `Your ${subscription.status === "trial" ? "free trial" : "subscription"} expires tomorrow! Pay ₹199 now to avoid service interruption.`,
           priority: "urgent",
         });
 
@@ -228,7 +228,7 @@ async function sendOneDayWarnings() {
               <p>Hi ${user.fullName},</p>
               <p><strong>Your FitCoach ${subscription.status === "trial" ? "free trial" : "subscription"} will expire tomorrow!</strong></p>
               <p>After expiry, you will lose access to all platform features until you make a payment.</p>
-              <p>Pay <strong>₹99</strong> now to continue using FitCoach:</p>
+              <p>Pay <strong>₹199</strong> now to continue using FitCoach:</p>
               <p><a href="${process.env.FRONTEND_URL}/coach/platform-subscription" style="display: inline-block; padding: 12px 24px; background-color: #dc2626; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Pay Now</a></p>
               <p>Thank you for using FitCoach!</p>
             `,
@@ -298,7 +298,7 @@ async function sendExpiryNotifications() {
         recipientId: user._id,
         type: "subscription_expired",
         title: "Platform Access Suspended",
-        message: "Your subscription has expired. Pay ₹99 to restore access to FitCoach.",
+        message: "Your subscription has expired. Pay ₹199 to restore access to FitCoach.",
         priority: "urgent",
       });
 
@@ -315,7 +315,7 @@ async function sendExpiryNotifications() {
             <p>Hi ${user.fullName},</p>
             <p><strong>Your FitCoach subscription has expired and your platform access has been suspended.</strong></p>
             <p>You will not be able to access coach features until you renew your subscription.</p>
-            <p>To restore access, please make a payment of <strong>₹99</strong>:</p>
+            <p>To restore access, please make a payment of <strong>₹199</strong>:</p>
             <p><a href="${process.env.FRONTEND_URL}/coach/platform-subscription" style="display: inline-block; padding: 12px 24px; background-color: #dc2626; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">Renew Subscription</a></p>
             <p>Thank you for using FitCoach!</p>
           `,
