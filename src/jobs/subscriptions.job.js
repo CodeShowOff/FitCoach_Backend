@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import Subscription from "../models/Subscription.js";
+import { onSubscriptionEnded } from "../services/chat.service.js";
 
 dotenv.config({ quiet: true });
 
@@ -12,15 +13,41 @@ export const expireCompletedSubscriptions = async () => {
   try {
     const now = new Date();
 
+    const expiringSubscriptions = await Subscription.find({
+      status: "approved",
+      endDate: { $lt: now },
+    })
+      .select("_id clientId planId")
+      .lean();
+
+    if (!expiringSubscriptions.length) {
+      return {
+        matched: 0,
+        modified: 0,
+      };
+    }
+
+    const expiringIds = expiringSubscriptions.map((subscription) => subscription._id);
+
     // Find all approved subscriptions that have passed their end date
     const result = await Subscription.updateMany(
       {
+        _id: { $in: expiringIds },
         status: "approved",
-        endDate: { $lt: now },
       },
       {
         $set: { status: "expired" },
       }
+    );
+
+    // Remove clients from plan communities for expired subscriptions
+    await Promise.allSettled(
+      expiringSubscriptions.map((subscription) =>
+        onSubscriptionEnded({
+          clientId: subscription.clientId,
+          planId: subscription.planId,
+        })
+      )
     );
 
     return {

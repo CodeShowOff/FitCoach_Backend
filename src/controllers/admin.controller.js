@@ -19,6 +19,7 @@ import ContactRequest from "../models/ContactRequest.js";
 import PlatformSubscription from "../models/PlatformSubscription.js";
 import { purgeStaleUnverifiedUsers } from "../jobs/reminders.job.js";
 import { cleanupOldMessages, getCleanupStats } from "../jobs/chatCleanup.job.js";
+import { onSubscriptionApproved, onSubscriptionEnded } from "../services/chat.service.js";
 import cloudinary from "../config/cloudinary.js";
 import streamifier from "streamifier";
 
@@ -320,7 +321,77 @@ export const updateSubscriptionStatusByAdmin = asyncHandler(async (req, res) => 
     throw new Error("Subscription not found");
   }
 
+  if (subscription.status === "cancelled") {
+    res.status(400);
+    throw new Error("Cancelled subscriptions cannot be updated");
+  }
+
+  const wasApproved = subscription.status === "approved";
+
   subscription.status = status;
+
+  if (status === "approved") {
+    subscription.startDate = new Date();
+    const weeks = subscription.durationWeeks || 4;
+    const end = new Date(subscription.startDate);
+    end.setDate(end.getDate() + weeks * 7);
+    subscription.endDate = end;
+
+    const expiredSubs = await Subscription.find({
+      _id: { $ne: subscription._id },
+      clientId: subscription.clientId,
+      status: "approved",
+      endDate: { $gte: subscription.startDate },
+    });
+
+    await Subscription.updateMany(
+      {
+        _id: { $ne: subscription._id },
+        clientId: subscription.clientId,
+        status: "approved",
+        endDate: { $gte: subscription.startDate },
+      },
+      { $set: { status: "expired" } }
+    );
+
+    for (const expiredSub of expiredSubs) {
+      onSubscriptionEnded({
+        clientId: expiredSub.clientId,
+        planId: expiredSub.planId,
+      }).catch((err) => console.error("Failed to remove from plan group:", err));
+    }
+
+    const subscriptionPlan = await Plan.findById(subscription.planId);
+    if (subscriptionPlan?.title) {
+      subscription.planTitle = subscriptionPlan.title;
+    }
+
+    const approvedPlanTitle = subscriptionPlan?.title || subscription.planTitle;
+
+    onSubscriptionApproved({
+      clientId: subscription.clientId,
+      coachId: subscription.coachId,
+      planId: subscription.planId,
+      planTitle: approvedPlanTitle,
+    }).catch((err) => console.error("Failed to add to plan group:", err));
+
+    if (subscriptionPlan) {
+      if (subscriptionPlan.workoutPlanIds && subscriptionPlan.workoutPlanIds.length > 0) {
+        subscription.assignedWorkoutPlanIds = subscriptionPlan.workoutPlanIds;
+      }
+      if (subscriptionPlan.dietPlanIds && subscriptionPlan.dietPlanIds.length > 0) {
+        subscription.assignedDietPlanIds = subscriptionPlan.dietPlanIds;
+      }
+    }
+  }
+
+  if (status === "rejected" && wasApproved) {
+    onSubscriptionEnded({
+      clientId: subscription.clientId,
+      planId: subscription.planId,
+    }).catch((err) => console.error("Failed to remove from plan group:", err));
+  }
+
   await subscription.save();
 
   res.json({

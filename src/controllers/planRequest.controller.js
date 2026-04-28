@@ -6,6 +6,7 @@ import Plan from "../models/Plan.js";
 import User from "../models/User.js";
 import Subscription from "../models/Subscription.js";
 import { createNotification } from "./notifications.controller.js";
+import { onSubscriptionApproved, onSubscriptionEnded } from "../services/chat.service.js";
 
 const createRequestSchema = Joi.object({
   planId: Joi.string().required(),
@@ -115,27 +116,47 @@ export const approvePlanRequest = asyncHandler(async (req, res) => {
     status: { $in: ["pending", "approved"] },
   });
   let subscription = existingSub;
+  const approvedStartDate = new Date();
+  const durationWeeks =
+    typeof existingSub?.durationWeeks === "number"
+      ? existingSub.durationWeeks
+      : plan.durationWeeks || 4;
+  const approvedEndDate = new Date(approvedStartDate);
+  approvedEndDate.setDate(approvedEndDate.getDate() + durationWeeks * 7);
   if (!subscription) {
     subscription = await Subscription.create({
       clientId: request.clientId,
       coachId: request.coachId,
       planId: request.planId,
       amount: typeof plan.price === "number" ? plan.price : 0,
-      durationWeeks: plan.durationWeeks,
+      durationWeeks: plan.durationWeeks || durationWeeks,
       planTitle: plan.title,
       paymentMode: request.paymentMode || "manual_qr",
       paymentProofUrl: request.paymentProofUrl || null,
       status: "approved", // directly approved via coach action
-      startDate: new Date(),
+      startDate: approvedStartDate,
+      endDate: approvedEndDate,
     });
   } else {
     subscription.status = "approved";
-    subscription.startDate = new Date();
+    subscription.startDate = approvedStartDate;
+    subscription.endDate = approvedEndDate;
+    subscription.planTitle = plan.title;
+    if (!subscription.durationWeeks && plan.durationWeeks) {
+      subscription.durationWeeks = plan.durationWeeks;
+    }
     await subscription.save();
   }
 
   // Ensure only one active subscription overlaps: expire others
   const effectiveStart = subscription.startDate || new Date();
+  const expiredSubs = await Subscription.find({
+    _id: { $ne: subscription._id },
+    clientId: request.clientId,
+    status: "approved",
+    endDate: { $gte: effectiveStart },
+  });
+
   await Subscription.updateMany(
     {
       _id: { $ne: subscription._id },
@@ -146,9 +167,25 @@ export const approvePlanRequest = asyncHandler(async (req, res) => {
     { $set: { status: "expired" } }
   );
 
+  // Remove client from expired plan groups
+  for (const expiredSub of expiredSubs) {
+    onSubscriptionEnded({
+      clientId: expiredSub.clientId,
+      planId: expiredSub.planId,
+    }).catch((err) => console.error("Failed to remove from plan group:", err));
+  }
+
   request.status = "approved";
   request.approvedAt = new Date();
   await request.save();
+
+  // Add client to newly approved plan group
+  onSubscriptionApproved({
+    clientId: subscription.clientId,
+    coachId: subscription.coachId,
+    planId: subscription.planId,
+    planTitle: subscription.planTitle,
+  }).catch((err) => console.error("Failed to add to plan group:", err));
 
   // Notify client on approval
   createNotification({

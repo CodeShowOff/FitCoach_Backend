@@ -2,6 +2,8 @@
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import ConversationMember from "../models/ConversationMember.js";
+import Plan from "../models/Plan.js";
+import Subscription from "../models/Subscription.js";
 import User from "../models/User.js";
 import mongoose from "mongoose";
 
@@ -11,6 +13,15 @@ const MESSAGE_RETENTION_DAYS = 7;
 // System user ID constant - used for system messages
 // Using a fixed ObjectId ensures consistency and avoids creating invalid references
 const SYSTEM_USER_ID = new mongoose.Types.ObjectId("000000000000000000000000");
+
+const normalizePlanTitle = (title) => {
+  const normalized = String(title || "").trim();
+  return normalized || "Plan";
+};
+
+const buildPlanCommunityName = (planTitle) => `${planTitle} Community`;
+const buildPlanCommunityDescription = (planTitle) =>
+  `Community group for ${planTitle} subscribers`;
 
 /**
  * Get or create the global broadcast conversation for a coach
@@ -23,12 +34,10 @@ export const getOrCreateGlobalBroadcast = async (coachId) => {
   });
 
   if (!conversation) {
-    const coach = await User.findById(coachId).select("fullName").lean();
-    
     conversation = await Conversation.create({
       type: "global_broadcast",
       coachId,
-      name: `${coach?.fullName || "Coach"}'s Announcements`,
+      name: "Announcements",
       description: "Broadcast channel for announcements and updates",
     });
 
@@ -43,25 +52,83 @@ export const getOrCreateGlobalBroadcast = async (coachId) => {
  * Get or create a plan-specific group conversation
  */
 export const getOrCreatePlanGroup = async (planId, coachId, planTitle) => {
+  const normalizedPlanTitle = normalizePlanTitle(planTitle);
+  const expectedName = buildPlanCommunityName(normalizedPlanTitle);
+  const expectedDescription = buildPlanCommunityDescription(normalizedPlanTitle);
+
   let conversation = await Conversation.findOne({
     planId,
     type: "plan_group",
-    isActive: true,
   });
+  let shouldSyncMetadata = false;
 
   if (!conversation) {
-    conversation = await Conversation.create({
-      type: "plan_group",
-      coachId,
-      planId,
-      planTitle,
-      name: `${planTitle} Community`,
-      description: `Community group for ${planTitle} subscribers`,
-    });
+    try {
+      conversation = await Conversation.create({
+        type: "plan_group",
+        coachId,
+        planId,
+        planTitle: normalizedPlanTitle,
+        name: expectedName,
+        description: expectedDescription,
+      });
+    } catch (error) {
+      const isDuplicateKey =
+        error?.code === 11000 ||
+        (typeof error?.message === "string" && error.message.includes("E11000"));
 
-    // Add coach as owner
-    await ConversationMember.addMember(conversation._id, coachId, "owner");
+      if (isDuplicateKey) {
+        conversation = await Conversation.findOne({
+          planId,
+          type: "plan_group",
+        });
+        shouldSyncMetadata = true;
+      } else {
+        throw error;
+      }
+    }
+  } else {
+    shouldSyncMetadata = true;
   }
+
+  if (!conversation) {
+    throw new Error("Failed to create or load plan group conversation");
+  }
+
+  if (shouldSyncMetadata) {
+    const coachIdString = coachId?.toString?.() || String(coachId);
+    const conversationCoachIdString =
+      conversation.coachId?.toString?.() || String(conversation.coachId);
+
+    const updates = {};
+
+    if (!conversation.isActive) {
+      updates.isActive = true;
+    }
+    if (conversationCoachIdString !== coachIdString) {
+      updates.coachId = coachId;
+    }
+    if (conversation.planTitle !== normalizedPlanTitle) {
+      updates.planTitle = normalizedPlanTitle;
+    }
+    if (conversation.name !== expectedName) {
+      updates.name = expectedName;
+    }
+    if (conversation.description !== expectedDescription) {
+      updates.description = expectedDescription;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      conversation = await Conversation.findByIdAndUpdate(
+        conversation._id,
+        { $set: updates },
+        { new: true }
+      );
+    }
+  }
+
+  // Ensure coach is always owner/member for this plan community
+  await ConversationMember.addMember(conversation._id, coachId, "owner");
 
   return conversation;
 };
@@ -105,14 +172,25 @@ export const getOrCreateDirectConversation = async (coachId, clientId) => {
  */
 export const addClientToGlobalBroadcast = async (coachId, clientId) => {
   const broadcast = await getOrCreateGlobalBroadcast(coachId);
+
+  const existingActiveMembership = await ConversationMember.findOne({
+    conversationId: broadcast._id,
+    userId: clientId,
+    isActive: true,
+  })
+    .select("_id")
+    .lean();
+
   await ConversationMember.addMember(broadcast._id, clientId, "member");
-  
-  // Create system message
-  const client = await User.findById(clientId).select("fullName").lean();
-  await createSystemMessage(
-    broadcast._id,
-    `${client?.fullName || "A new member"} joined the channel`
-  );
+
+  // Create system message only when membership is newly active
+  if (!existingActiveMembership) {
+    const client = await User.findById(clientId).select("fullName").lean();
+    await createSystemMessage(
+      broadcast._id,
+      `${client?.fullName || "A new member"} joined the channel`
+    );
+  }
   
   return broadcast;
 };
@@ -137,14 +215,25 @@ export const removeClientFromGlobalBroadcast = async (coachId, clientId) => {
  */
 export const addClientToPlanGroup = async (planId, coachId, clientId, planTitle) => {
   const planGroup = await getOrCreatePlanGroup(planId, coachId, planTitle);
+
+  const existingActiveMembership = await ConversationMember.findOne({
+    conversationId: planGroup._id,
+    userId: clientId,
+    isActive: true,
+  })
+    .select("_id")
+    .lean();
+
   await ConversationMember.addMember(planGroup._id, clientId, "member");
-  
-  // Create system message
-  const client = await User.findById(clientId).select("fullName").lean();
-  await createSystemMessage(
-    planGroup._id,
-    `${client?.fullName || "A new member"} joined the group`
-  );
+
+  // Create system message only when membership is newly active
+  if (!existingActiveMembership) {
+    const client = await User.findById(clientId).select("fullName").lean();
+    await createSystemMessage(
+      planGroup._id,
+      `${client?.fullName || "A new member"} joined the group`
+    );
+  }
   
   return planGroup;
 };
@@ -160,6 +249,18 @@ export const removeClientFromPlanGroup = async (planId, clientId) => {
   });
 
   if (planGroup) {
+    const existingActiveMembership = await ConversationMember.findOne({
+      conversationId: planGroup._id,
+      userId: clientId,
+      isActive: true,
+    })
+      .select("_id")
+      .lean();
+
+    if (!existingActiveMembership) {
+      return planGroup;
+    }
+
     const client = await User.findById(clientId).select("fullName").lean();
     
     await ConversationMember.removeMember(planGroup._id, clientId);
@@ -168,6 +269,8 @@ export const removeClientFromPlanGroup = async (planId, clientId) => {
       planGroup._id,
       `${client?.fullName || "A member"} left the group`
     );
+
+    return planGroup;
   }
 };
 
@@ -272,10 +375,167 @@ export const getMessages = async (conversationId, options = {}) => {
   return messages;
 };
 
+const resolvePlanId = (planIdValue) => {
+  if (!planIdValue) return null;
+
+  if (planIdValue instanceof mongoose.Types.ObjectId) {
+    return planIdValue;
+  }
+
+  if (typeof planIdValue === "object" && planIdValue._id) {
+    return planIdValue._id;
+  }
+
+  return planIdValue;
+};
+
+const resolvePlanTitle = (subscription) => {
+  if (
+    subscription.planId &&
+    typeof subscription.planId === "object" &&
+    subscription.planId.title
+  ) {
+    return subscription.planId.title;
+  }
+
+  if (subscription.planTitle) {
+    return subscription.planTitle;
+  }
+
+  return "Plan";
+};
+
+/**
+ * Ensure active approved subscriptions always have plan-group conversations + memberships.
+ * This self-heals legacy records created before chat hooks were wired in all approval paths.
+ */
+export const syncPlanGroupMembershipsForUser = async (userId, userRole) => {
+  if (!["coach", "client"].includes(userRole)) {
+    return;
+  }
+
+  if (userRole === "coach") {
+    await syncCoachPlanCommunities(userId);
+  }
+
+  const now = new Date();
+  const query = {
+    status: "approved",
+    endDate: { $gte: now },
+    ...(userRole === "coach" ? { coachId: userId } : { clientId: userId }),
+  };
+
+  const activeSubscriptions = await Subscription.find(query)
+    .select("coachId clientId planId planTitle")
+    .populate("planId", "title")
+    .lean();
+
+  const activePlanIds = new Set();
+
+  for (const subscription of activeSubscriptions) {
+    try {
+      const planId = resolvePlanId(subscription.planId);
+      if (!planId || !subscription.coachId || !subscription.clientId) {
+        continue;
+      }
+
+      activePlanIds.add(planId.toString());
+
+      const planTitle = resolvePlanTitle(subscription);
+      const planGroup = await getOrCreatePlanGroup(planId, subscription.coachId, planTitle);
+
+      await Promise.all([
+        ConversationMember.addMember(planGroup._id, subscription.coachId, "owner"),
+        ConversationMember.addMember(planGroup._id, subscription.clientId, "member"),
+      ]);
+    } catch (error) {
+      console.error("Failed to sync subscription plan group:", {
+        subscriptionId: subscription._id?.toString?.() || subscription._id,
+        coachId: subscription.coachId?.toString?.() || subscription.coachId,
+        clientId: subscription.clientId?.toString?.() || subscription.clientId,
+        planId:
+          subscription.planId?._id?.toString?.() ||
+          subscription.planId?.toString?.() ||
+          subscription.planId,
+        error: error?.message || error,
+      });
+    }
+  }
+
+  // For clients, ensure they are removed from plan groups with no active subscription.
+  if (userRole === "client") {
+    const memberships = await ConversationMember.find({
+      userId,
+      isActive: true,
+    })
+      .select("conversationId")
+      .lean();
+
+    if (memberships.length > 0) {
+      const conversationIds = memberships.map((membership) => membership.conversationId);
+
+      const planConversations = await Conversation.find({
+        _id: { $in: conversationIds },
+        type: "plan_group",
+        isActive: true,
+      })
+        .select("planId")
+        .lean();
+
+      for (const conversation of planConversations) {
+        const membershipPlanId = conversation.planId?.toString?.();
+        if (!membershipPlanId || activePlanIds.has(membershipPlanId)) {
+          continue;
+        }
+
+        try {
+          await removeClientFromPlanGroup(conversation.planId, userId);
+        } catch (error) {
+          console.error("Failed to remove stale plan-group membership:", {
+            userId: userId?.toString?.() || userId,
+            planId: membershipPlanId,
+            error: error?.message || error,
+          });
+        }
+      }
+    }
+  }
+};
+
+/**
+ * Ensure every plan owned by the coach has a pre-created plan community.
+ */
+export const syncCoachPlanCommunities = async (coachId) => {
+  const plans = await Plan.find({ coachId })
+    .select("_id title")
+    .lean();
+
+  if (!plans.length) {
+    return;
+  }
+
+  const results = await Promise.allSettled(
+    plans.map((plan) => getOrCreatePlanGroup(plan._id, coachId, plan.title))
+  );
+
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      const failedPlan = plans[index];
+      console.error("Failed to pre-create coach plan community:", {
+        coachId: coachId?.toString?.() || coachId,
+        planId: failedPlan?._id?.toString?.() || failedPlan?._id,
+        error: result.reason?.message || result.reason,
+      });
+    }
+  });
+};
+
 /**
  * Get all conversations for a user
  */
 export const getUserConversations = async (userId, userRole) => {
+  await syncPlanGroupMembershipsForUser(userId, userRole);
+
   const conversations = [];
 
   if (userRole === "coach") {
@@ -512,4 +772,5 @@ export default {
   initializeClientChat,
   onSubscriptionApproved,
   onSubscriptionEnded,
+  syncCoachPlanCommunities,
 };

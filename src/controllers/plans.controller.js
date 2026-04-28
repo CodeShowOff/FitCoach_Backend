@@ -3,6 +3,7 @@ import asyncHandler from "express-async-handler";
 import Joi from "joi";
 import Plan from "../models/Plan.js";
 import User from "../models/User.js";
+import { getOrCreatePlanGroup } from "../services/chat.service.js";
 
 // ------------------------------
 // 🧩 Validation Schemas
@@ -73,6 +74,17 @@ export const createPlan = asyncHandler(async (req, res) => {
       },
       { $set: { isDefault: false } }
     );
+  }
+
+  // Ensure plan community exists as soon as the plan is created
+  try {
+    await getOrCreatePlanGroup(plan._id, req.user._id, plan.title);
+  } catch (error) {
+    console.error("Failed to sync plan community on create:", {
+      planId: plan?._id?.toString?.() || plan?._id,
+      coachId: req.user?._id?.toString?.() || req.user?._id,
+      error: error?.message || error,
+    });
   }
 
   res.status(201).json({
@@ -256,6 +268,17 @@ export const updatePlan = asyncHandler(async (req, res) => {
   }
 
   await plan.save();
+
+  // Keep linked plan community metadata aligned (title, name, description)
+  try {
+    await getOrCreatePlanGroup(plan._id, req.user._id, plan.title);
+  } catch (error) {
+    console.error("Failed to sync plan community on update:", {
+      planId: plan?._id?.toString?.() || plan?._id,
+      coachId: req.user?._id?.toString?.() || req.user?._id,
+      error: error?.message || error,
+    });
+  }
 
   res.json({
     success: true,

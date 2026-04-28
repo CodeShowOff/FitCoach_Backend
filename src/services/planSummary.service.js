@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Subscription from "../models/Subscription.js";
 import Plan from "../models/Plan.js";
+import { onSubscriptionEnded } from "./chat.service.js";
 
 const APPROVED_STATUSES = ["approved"];
 const TRACKED_STATUSES = ["pending", "approved"];
@@ -31,11 +32,12 @@ const ensureObjectId = (value) => {
   }
 };
 
-export const getPlanSummariesForClients = async (coachId, clientIds = []) => {
+export const getPlanSummariesForClients = async (coachId, clientIds = [], options = {}) => {
   try {
     const normalizedCoachId = ensureObjectId(coachId);
     const normalizedClientIds = normalizeIds(clientIds);
     const now = new Date();
+    const { skipExpiry = false } = options;
 
     let defaultPlan = null;
     let fallbackPlan = null;
@@ -75,20 +77,42 @@ export const getPlanSummariesForClients = async (coachId, clientIds = []) => {
       };
     }
 
-    try {
-      await Subscription.updateMany(
-        {
+    if (!skipExpiry) {
+      try {
+        const expiringSubscriptions = await Subscription.find({
           clientId: { $in: normalizedClientIds },
           status: "approved",
           endDate: { $lt: now },
-        },
-        { $set: { status: "expired" } }
-      );
-    } catch (err) {
-      console.error("❌ SERVICE ERROR: Failed to update expired subscriptions in plan summary");
-      console.error("   Details:", err.message || err);
-      console.error("   Impact: Some expired subscriptions may show as active (will be fixed on next cron run)");
-      // Continue without updating expired subscriptions
+        })
+          .select("_id clientId planId")
+          .lean();
+
+        if (expiringSubscriptions.length > 0) {
+          const expiringIds = expiringSubscriptions.map((subscription) => subscription._id);
+
+          await Subscription.updateMany(
+            {
+              _id: { $in: expiringIds },
+              status: "approved",
+            },
+            { $set: { status: "expired" } }
+          );
+
+          await Promise.allSettled(
+            expiringSubscriptions.map((subscription) =>
+              onSubscriptionEnded({
+                clientId: subscription.clientId,
+                planId: subscription.planId,
+              })
+            )
+          );
+        }
+      } catch (err) {
+        console.error("❌ SERVICE ERROR: Failed to update expired subscriptions in plan summary");
+        console.error("   Details:", err.message || err);
+        console.error("   Impact: Some expired subscriptions may show as active (will be fixed on next cron run)");
+        // Continue without updating expired subscriptions
+      }
     }
 
     const subscriptions = await Subscription.find({

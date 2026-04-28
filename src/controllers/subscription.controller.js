@@ -22,6 +22,43 @@ const updateStatusSchema = Joi.object({
 
 const CLIENT_CANCEL_ALLOWED_STATUSES = ["pending", "approved"];
 
+const expireSubscriptionsAndSyncChat = async (filter = {}) => {
+  const now = new Date();
+
+  const expiringSubscriptions = await Subscription.find({
+    ...filter,
+    status: "approved",
+    endDate: { $lt: now },
+  })
+    .select("_id clientId planId")
+    .lean();
+
+  if (!expiringSubscriptions.length) {
+    return 0;
+  }
+
+  const expiringIds = expiringSubscriptions.map((subscription) => subscription._id);
+
+  await Subscription.updateMany(
+    {
+      _id: { $in: expiringIds },
+      status: "approved",
+    },
+    { $set: { status: "expired" } }
+  );
+
+  await Promise.allSettled(
+    expiringSubscriptions.map((subscription) =>
+      onSubscriptionEnded({
+        clientId: subscription.clientId,
+        planId: subscription.planId,
+      })
+    )
+  );
+
+  return expiringSubscriptions.length;
+};
+
 // ------------------------------
 // 💳 @desc Create a new subscription (Client manually pays via QR)
 // @route POST /api/v1/subscriptions
@@ -93,16 +130,7 @@ export const createSubscription = asyncHandler(async (req, res) => {
 // @access Private (Client)
 // ------------------------------
 export const getMySubscriptions = asyncHandler(async (req, res) => {
-  const now = new Date();
-
-  await Subscription.updateMany(
-    {
-      clientId: req.user._id,
-      status: "approved",
-      endDate: { $lt: now },
-    },
-    { $set: { status: "expired" } }
-  );
+  await expireSubscriptionsAndSyncChat({ clientId: req.user._id });
 
   const parsedPage = Number.parseInt(String(req.query.page ?? ""), 10);
   const parsedLimit = Number.parseInt(String(req.query.limit ?? ""), 10);
@@ -156,16 +184,7 @@ export const getMySubscriptions = asyncHandler(async (req, res) => {
 // @access Private (Coach)
 // ------------------------------
 export const getCoachSubscriptions = asyncHandler(async (req, res) => {
-  const now = new Date();
-
-  await Subscription.updateMany(
-    {
-      coachId: req.user._id,
-      status: "approved",
-      endDate: { $lt: now },
-    },
-    { $set: { status: "expired" } }
-  );
+  await expireSubscriptionsAndSyncChat({ coachId: req.user._id });
 
   const subscriptions = await Subscription.find({ coachId: req.user._id })
     .populate("clientId", "fullName email")
@@ -217,7 +236,9 @@ export const getCoachSubscriptions = asyncHandler(async (req, res) => {
     .lean();
   const clientIds = clients.map((client) => client._id);
 
-  const { summaries } = await getPlanSummariesForClients(req.user._id, clientIds);
+  const { summaries } = await getPlanSummariesForClients(req.user._id, clientIds, {
+    skipExpiry: true,
+  });
 
   const assignmentMap = new Map();
 
@@ -292,6 +313,8 @@ export const updateSubscriptionStatus = asyncHandler(async (req, res) => {
     throw new Error("Access denied — cannot update this subscription");
   }
 
+  const wasApproved = subscription.status === "approved";
+
   subscription.status = value.status;
 
   if (value.status === "approved") {
@@ -327,16 +350,22 @@ export const updateSubscriptionStatus = asyncHandler(async (req, res) => {
       }).catch((err) => console.error("Failed to remove from plan group:", err));
     }
 
+    const subscriptionPlan = await Plan.findById(subscription.planId);
+    if (subscriptionPlan?.title) {
+      subscription.planTitle = subscriptionPlan.title;
+    }
+
+    const approvedPlanTitle = subscriptionPlan?.title || subscription.planTitle;
+
     // Add client to new plan group
     onSubscriptionApproved({
       clientId: subscription.clientId,
       coachId: subscription.coachId,
       planId: subscription.planId,
-      planTitle: subscription.planTitle,
+      planTitle: approvedPlanTitle,
     }).catch((err) => console.error("Failed to add to plan group:", err));
 
     // Auto-assign workout and diet plans linked to this subscription plan
-    const subscriptionPlan = await Plan.findById(subscription.planId);
     if (subscriptionPlan) {
       // Store workout plan IDs on subscription for quick access
       if (subscriptionPlan.workoutPlanIds && subscriptionPlan.workoutPlanIds.length > 0) {
@@ -347,6 +376,13 @@ export const updateSubscriptionStatus = asyncHandler(async (req, res) => {
         subscription.assignedDietPlanIds = subscriptionPlan.dietPlanIds;
       }
     }
+  }
+
+  if (value.status === "rejected" && wasApproved) {
+    onSubscriptionEnded({
+      clientId: subscription.clientId,
+      planId: subscription.planId,
+    }).catch((err) => console.error("Failed to remove from plan group:", err));
   }
 
   await subscription.save();
@@ -409,14 +445,7 @@ export const cancelMySubscription = asyncHandler(async (req, res) => {
 export const getMyCurrentPlan = asyncHandler(async (req, res) => {
   const now = new Date();
 
-  await Subscription.updateMany(
-    {
-      clientId: req.user._id,
-      status: "approved",
-      endDate: { $lt: now },
-    },
-    { $set: { status: "expired" } }
-  );
+  await expireSubscriptionsAndSyncChat({ clientId: req.user._id });
 
   const activeSubscription = await Subscription.findOne({
     clientId: req.user._id,
