@@ -299,7 +299,7 @@ export const getAssignedCoach = asyncHandler(async (req, res) => {
     .populate({
       path: "coachId",
       select:
-        "fullName email role phone whatsappNumber specialization experienceYears bio createdAt paymentQrUrl avatarUrl coachCode referralCode isActive address",
+        "fullName email role phone whatsappNumber companyName specialization experienceYears bio createdAt paymentQrUrl avatarUrl coachCode referralCode isActive address",
     })
     .lean();
 
