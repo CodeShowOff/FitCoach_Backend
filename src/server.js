@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import dns from "dns";
 import http from "http";
 import connectDB from "./config/db.js";
 import { initializeScheduledJobs } from "./config/scheduler.js";
@@ -7,6 +8,8 @@ import { initializeSocketServer } from "./socket/socketServer.js";
 
 // Load environment variables
 dotenv.config();
+
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
 console.log("🔧 Environment Configuration:");
 console.log("   NODE_ENV:", process.env.NODE_ENV || "undefined (defaulting to development)");

@@ -3,6 +3,7 @@
 import express from "express";
 import {
   addProgressLog,
+  addClientProgressLog,
   getMyProgressSummary,
   getMyProgressLogs,
   getClientProgressLogs,
@@ -45,6 +46,16 @@ router.put("/goal-weight", protect, authorizeRoles("client"), updateGoalWeight);
 // ------------------------------
 // 🧑‍🏫 Coach Routes
 // ------------------------------
+
+// @route   POST /api/v1/progress/client/:clientId
+// @desc    Add a progress entry for a specific client
+// @access  Private (Coach/Admin)
+router.post(
+  "/client/:clientId",
+  protect,
+  authorizeRoles("coach", "admin"),
+  addClientProgressLog
+);
 
 // @route   GET /api/v1/progress/client/:clientId
 // @desc    Get progress logs for a specific client (with pagination)

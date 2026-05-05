@@ -46,110 +46,60 @@ const getLatestHistoryValue = (history = []) => {
   return latestValue;
 };
 
-// ------------------------------
-// 🧩 Validation Schema
-// ------------------------------
-const progressSchema = Joi.object({
-  weight: Joi.number().min(0).max(500).optional(),
-  height: Joi.number().min(0).max(300).optional(),
-  notes: Joi.string().max(500).optional().allow(""),
-  
-  // Basic Info (non-tracking)
-  dateOfBirth: Joi.date().max('now').optional(),
-  gender: Joi.string().valid("Male", "Female", "Other").optional(),
-  
-  // Smart Scale Measurements (tracking)
-  bodyFatPercentage: Joi.number().min(0).max(100).optional(),
-  visceralFatLevel: Joi.number().min(0).max(50).optional(),
-  muscleMass: Joi.number().min(0).max(200).optional(),
-  metabolicAge: Joi.number().min(10).max(120).optional(),
-  bodyWaterPercentage: Joi.number().min(0).max(100).optional(),
-  boneMass: Joi.number().min(0).max(20).optional(),
-  
-  // Lifestyle & Habits (non-tracking)
-  dailyActivityLevel: Joi.string().valid("None", "Sedentary", "Lightly active", "Moderately active", "Very active", "Highly active / athlete").optional(),
-  hydrationHabits: Joi.string().valid("None", "< 1 liter/day", "1–2 liters/day", "2–3 liters/day", "> 3 liters/day").optional(),
-  personalGoals: Joi.string().max(500).optional().allow(""),
-  
-  // Health History (non-tracking)
-  healthConditions: Joi.string().max(1000).optional().allow(""),
-  allergies: Joi.string().max(1000).optional().allow(""),
-  medications: Joi.string().max(1000).optional().allow(""),
-  pastWeightChanges: Joi.string().max(500).optional().allow(""),
-  
-  // Vitals (tracking)
-  bloodSugarFasting: Joi.number().min(0).max(600).optional(),
-  bloodSugarRandom: Joi.number().min(0).max(600).optional(),
-  bloodPressureSystolic: Joi.number().min(40).max(250).optional(),
-  bloodPressureDiastolic: Joi.number().min(20).max(200).optional(),
-});
+const normalizeHydrationHabits = (body) => {
+  if (typeof body?.hydrationHabits !== "string") return;
 
-// ------------------------------
-// 🩺 @desc Add new progress entry (Client only)
-// @route POST /api/v1/progress
-// @access Private (Client)
-// ------------------------------
-export const addProgressLog = asyncHandler(async (req, res) => {
-  // Normalize hydrationHabits to match allowed enum values,
-  // accounting for sanitization stripping angle brackets or spaces.
-  if (typeof req.body?.hydrationHabits === "string") {
-    const rawOriginal = req.body.hydrationHabits;
-    const raw = rawOriginal.trim().toLowerCase();
+  const rawOriginal = body.hydrationHabits;
+  const raw = rawOriginal.trim().toLowerCase();
 
-    // Direct match for already-correct values
-    const directAllowed = [
-      "none",
-      "< 1 liter/day",
-      "1–2 liters/day",
-      "2–3 liters/day",
-      "> 3 liters/day",
-    ];
-    if (directAllowed.includes(rawOriginal)) {
-      // Already in the correct canonical form
-      // (matches Joi enum exactly), so skip further normalization.
-    } else {
-      // Fuzzy normalization for common variants and sanitised strings
-      const contains = (needle) => raw.includes(needle);
+  // Direct match for already-correct values
+  const directAllowed = [
+    "none",
+    "< 1 liter/day",
+    "1–2 liters/day",
+    "2–3 liters/day",
+    "> 3 liters/day",
+  ];
 
-      if (contains("none")) {
-        req.body.hydrationHabits = "None";
-      } else if (contains("1") && contains("liter") && contains("day") && !contains("2") && raw.startsWith("<")) {
-        // Variants like "<1 liter/day", "< 1 liter/day"
-        req.body.hydrationHabits = "< 1 liter/day";
-      } else if (contains("1") && contains("liter") && contains("day") && !contains("2")) {
-        // Fallback: anything mentioning 1 liter/day without 2
-        req.body.hydrationHabits = "< 1 liter/day";
-      } else if ((contains("1–2") || contains("1-2")) && contains("liter")) {
-        req.body.hydrationHabits = "1–2 liters/day";
-      } else if ((contains("2–3") || contains("2-3")) && contains("liter")) {
-        req.body.hydrationHabits = "2–3 liters/day";
-      } else if (contains("3") && contains("liter") && (contains(">") || contains("more than"))) {
-        req.body.hydrationHabits = "> 3 liters/day";
-      }
-    }
+  if (directAllowed.includes(rawOriginal)) {
+    return;
   }
 
-  const { error, value } = progressSchema.validate(req.body);
-  if (error) {
-    res.status(400);
-    throw new Error(error.details[0].message);
-  }
+  // Fuzzy normalization for common variants and sanitised strings
+  const contains = (needle) => raw.includes(needle);
 
-  const { 
+  if (contains("none")) {
+    body.hydrationHabits = "None";
+  } else if (
+    contains("1") &&
+    contains("liter") &&
+    contains("day") &&
+    !contains("2") &&
+    raw.startsWith("<")
+  ) {
+    // Variants like "<1 liter/day", "< 1 liter/day"
+    body.hydrationHabits = "< 1 liter/day";
+  } else if (contains("1") && contains("liter") && contains("day") && !contains("2")) {
+    // Fallback: anything mentioning 1 liter/day without 2
+    body.hydrationHabits = "< 1 liter/day";
+  } else if ((contains("1–2") || contains("1-2")) && contains("liter")) {
+    body.hydrationHabits = "1–2 liters/day";
+  } else if ((contains("2–3") || contains("2-3")) && contains("liter")) {
+    body.hydrationHabits = "2–3 liters/day";
+  } else if (contains("3") && contains("liter") && (contains(">") || contains("more than"))) {
+    body.hydrationHabits = "> 3 liters/day";
+  }
+};
+
+const applyProgressUpdateToUser = (user, value) => {
+  const {
     weight, height, notes,
     dateOfBirth, gender,
     bodyFatPercentage, visceralFatLevel, muscleMass, metabolicAge, bodyWaterPercentage, boneMass,
     dailyActivityLevel, hydrationHabits, personalGoals,
     healthConditions, allergies, medications, pastWeightChanges,
-    bloodSugarFasting, bloodSugarRandom, bloodPressureSystolic, bloodPressureDiastolic
+    bloodSugarFasting, bloodSugarRandom, bloodPressureSystolic, bloodPressureDiastolic,
   } = value;
-
-  // Get the user
-  const user = await User.findById(req.user._id);
-  if (!user) {
-    res.status(404);
-    throw new Error("User not found");
-  }
 
   const now = new Date();
   const updates = {};
@@ -163,7 +113,7 @@ export const addProgressLog = asyncHandler(async (req, res) => {
     user.gender = gender;
     updates.gender = gender;
   }
-  
+
   // Update non-tracking lifestyle fields
   if (dailyActivityLevel !== undefined) {
     user.dailyActivityLevel = dailyActivityLevel;
@@ -177,7 +127,7 @@ export const addProgressLog = asyncHandler(async (req, res) => {
     user.personalGoals = personalGoals;
     updates.personalGoals = personalGoals;
   }
-  
+
   // Update non-tracking health history fields
   if (healthConditions !== undefined) {
     user.healthConditions = healthConditions;
@@ -235,7 +185,7 @@ export const addProgressLog = asyncHandler(async (req, res) => {
     user.notesHistory.push({ text: notes, date: now });
     updates.notesHistory = user.notesHistory;
   }
-  
+
   // Smart Scale Measurements (tracking)
   if (bodyFatPercentage !== undefined) {
     user.bodyFatPercentageHistory.push({ value: bodyFatPercentage, date: now });
@@ -261,7 +211,7 @@ export const addProgressLog = asyncHandler(async (req, res) => {
     user.boneMassHistory.push({ value: boneMass, date: now });
     updates.boneMassHistory = user.boneMassHistory;
   }
-  
+
   // Vitals (tracking)
   if (bloodSugarFasting !== undefined) {
     user.bloodSugarFastingHistory.push({ value: bloodSugarFasting, date: now });
@@ -280,8 +230,125 @@ export const addProgressLog = asyncHandler(async (req, res) => {
     updates.bloodPressureDiastolicHistory = user.bloodPressureDiastolicHistory;
   }
 
+  return updates;
+};
+
+// ------------------------------
+// 🧩 Validation Schema
+// ------------------------------
+const progressSchema = Joi.object({
+  weight: Joi.number().min(0).max(500).optional(),
+  height: Joi.number().min(0).max(300).optional(),
+  notes: Joi.string().max(500).optional().allow(""),
+  
+  // Basic Info (non-tracking)
+  dateOfBirth: Joi.date().max('now').optional(),
+  gender: Joi.string().valid("Male", "Female", "Other").optional(),
+  
+  // Smart Scale Measurements (tracking)
+  bodyFatPercentage: Joi.number().min(0).max(100).optional(),
+  visceralFatLevel: Joi.number().min(0).max(50).optional(),
+  muscleMass: Joi.number().min(0).max(200).optional(),
+  metabolicAge: Joi.number().min(10).max(120).optional(),
+  bodyWaterPercentage: Joi.number().min(0).max(100).optional(),
+  boneMass: Joi.number().min(0).max(20).optional(),
+  
+  // Lifestyle & Habits (non-tracking)
+  dailyActivityLevel: Joi.string().valid("None", "Sedentary", "Lightly active", "Moderately active", "Very active", "Highly active / athlete").optional(),
+  hydrationHabits: Joi.string().valid("None", "< 1 liter/day", "1–2 liters/day", "2–3 liters/day", "> 3 liters/day").optional(),
+  personalGoals: Joi.string().max(500).optional().allow(""),
+  
+  // Health History (non-tracking)
+  healthConditions: Joi.string().max(1000).optional().allow(""),
+  allergies: Joi.string().max(1000).optional().allow(""),
+  medications: Joi.string().max(1000).optional().allow(""),
+  pastWeightChanges: Joi.string().max(500).optional().allow(""),
+  
+  // Vitals (tracking)
+  bloodSugarFasting: Joi.number().min(0).max(600).optional(),
+  bloodSugarRandom: Joi.number().min(0).max(600).optional(),
+  bloodPressureSystolic: Joi.number().min(40).max(250).optional(),
+  bloodPressureDiastolic: Joi.number().min(20).max(200).optional(),
+});
+
+// ------------------------------
+// 🩺 @desc Add new progress entry (Client only)
+// @route POST /api/v1/progress
+// @access Private (Client)
+// ------------------------------
+export const addProgressLog = asyncHandler(async (req, res) => {
+  normalizeHydrationHabits(req.body);
+
+  const { error, value } = progressSchema.validate(req.body);
+  if (error) {
+    res.status(400);
+    throw new Error(error.details[0].message);
+  }
+
+  // Get the user
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+
+  const updates = applyProgressUpdateToUser(user, value);
+
   // Save user with updated arrays
   await user.save();
+
+  res.status(201).json({
+    success: true,
+    message: "Progress updated successfully",
+    data: updates,
+  });
+});
+
+// ------------------------------
+// 🩺 @desc Add progress entry for a specific client (Coach/Admin)
+// @route POST /api/v1/progress/client/:clientId
+// @access Private (Coach/Admin)
+// ------------------------------
+export const addClientProgressLog = asyncHandler(async (req, res) => {
+  normalizeHydrationHabits(req.body);
+
+  const { error, value } = progressSchema.validate(req.body);
+  if (error) {
+    res.status(400);
+    throw new Error(error.details[0].message);
+  }
+
+  const clientId = req.params.clientId;
+  const requesterRole = req.user.role;
+
+  let client;
+
+  if (requesterRole === "coach") {
+    client = await User.findOne({
+      _id: clientId,
+      coachId: req.user._id,
+      role: "client",
+    });
+
+    if (!client) {
+      res.status(404);
+      throw new Error("Client not found or not assigned to this coach");
+    }
+  } else if (requesterRole === "admin") {
+    client = await User.findOne({ _id: clientId, role: "client" });
+
+    if (!client) {
+      res.status(404);
+      throw new Error("Client not found");
+    }
+  } else {
+    res.status(403);
+    throw new Error("Forbidden");
+  }
+
+  const updates = applyProgressUpdateToUser(client, value);
+
+  await client.save();
 
   res.status(201).json({
     success: true,
@@ -501,7 +568,7 @@ export const getClientProgressLogs = asyncHandler(async (req, res) => {
       role: "client",
     }).select(
       "weightHistory heightHistory bmiHistory notesHistory fullName " +
-      "age gender " +
+      "dateOfBirth gender " +
       "bodyFatPercentageHistory visceralFatLevelHistory muscleMassHistory metabolicAgeHistory bodyWaterPercentageHistory boneMassHistory " +
       "dailyActivityLevel hydrationHabits personalGoals " +
       "healthConditions allergies medications pastWeightChanges " +
@@ -518,7 +585,7 @@ export const getClientProgressLogs = asyncHandler(async (req, res) => {
       role: "client" 
     }).select(
       "weightHistory heightHistory bmiHistory notesHistory fullName " +
-      "age gender " +
+      "dateOfBirth gender " +
       "bodyFatPercentageHistory visceralFatLevelHistory muscleMassHistory metabolicAgeHistory bodyWaterPercentageHistory boneMassHistory " +
       "dailyActivityLevel hydrationHabits personalGoals " +
       "healthConditions allergies medications pastWeightChanges " +
