@@ -310,13 +310,10 @@ export const getProducts = asyncHandler(async (req, res) => {
   }
   // Admin can see all products (no coachId filter)
 
-  // 🔍 Consistent case-insensitive regex search on name/description
+  // 🔍 Use text index for efficient search on name, description, and category
   if (search && search.trim().length > 0) {
     const term = search.trim();
-    query.$or = [
-      { name: { $regex: term, $options: "i" } },
-      { description: { $regex: term, $options: "i" } },
-    ];
+    query.$text = { $search: term };
   }
 
   const [products, total] = await Promise.all([

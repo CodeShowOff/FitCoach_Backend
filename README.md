@@ -1,4 +1,4 @@
-# Fit Coach Portal - Backend
+# FitCoach - Backend
 
 This is the backend service for the **Fit Coach Portal**, a comprehensive health and fitness coaching application. It provides the RESTful API and real-time services needed to manage coaches, clients, diet/workout plans, subscriptions, and progress tracking.
 

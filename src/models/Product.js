@@ -64,6 +64,7 @@ const productSchema = new mongoose.Schema(
 // 🔍 Indexes for performance
 productSchema.index({ createdAt: -1 });
 productSchema.index({ name: "text", description: "text", category: "text" });
+productSchema.index({ coachId: 1, isActive: 1, createdAt: -1 });
 
 const Product = mongoose.model("Product", productSchema);
 export default Product;
