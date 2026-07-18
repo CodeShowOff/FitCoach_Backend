@@ -1,7 +1,7 @@
 {
   "name": "fit-coach-backend",
   "version": "0.1.0",
-  "description": "Backend for Fit Coach Portal — coach/client management, plans, progress tracking, subscriptions",
+  "description": "PulseLedger backend API for fitness coaching, workout/diet planning, subscriptions, chat, and progress tracking",
   "main": "src/server.js",
   "type": "module",
   "engines": {
@@ -27,7 +27,11 @@
     "health",
     "backend",
     "mern",
-    "coaching"
+    "coaching",
+    "pulseledger",
+    "workout-planning",
+    "diet-planning",
+    "socketio"
   ],
   "author": "CodeShowOff",
   "license": "MIT",
