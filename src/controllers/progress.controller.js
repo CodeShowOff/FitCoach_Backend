@@ -531,7 +531,7 @@ export const getMyProgressLogs = asyncHandler(async (req, res) => {
 // ------------------------------
 export const getMyProgressSummary = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id).select(
-    "weightHistory bmiHistory bloodPressureSystolicHistory bloodPressureDiastolicHistory"
+    "weightHistory bmiHistory metabolicAgeHistory"
   );
 
   if (!user) {
@@ -544,8 +544,7 @@ export const getMyProgressSummary = asyncHandler(async (req, res) => {
     data: {
       latestWeight: getLatestHistoryValue(user.weightHistory),
       latestBMI: getLatestHistoryValue(user.bmiHistory),
-      bloodPressureSystolic: getLatestHistoryValue(user.bloodPressureSystolicHistory),
-      bloodPressureDiastolic: getLatestHistoryValue(user.bloodPressureDiastolicHistory),
+      latestMetabolicAge: getLatestHistoryValue(user.metabolicAgeHistory),
     },
   });
 });
